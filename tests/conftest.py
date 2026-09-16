@@ -56,3 +56,6 @@ EXPLAIN_RESIDUAL_PCT = 2.0
 
 # Section 9: the spec's "runs in seconds".
 GRID_SECONDS = 10.0
+
+# Section 1: accrual fractions are ratios of integers; 1e-12 is float noise.
+DAY_COUNT_ABS_TOL = 1e-12
