@@ -45,3 +45,12 @@ Section 9, acceptance criterion 2 had the sign of spread convexity backwards. Th
 21. Par spread definition for Section 7 (Against the plan 9): par spread is PV_prot / (A_coupon + A_accrual) at the valuation date. Section 7 compares leg NPVs and fairUpfront against QuantLib, never fairSpread, which is the clean-value spread.
 22. Coupon inclusion on seasoned trades (Not verified 2): a coupon paying after as_of is included. QuantLib excludes one paying on as_of + 1 by default; Section 8's oracle tests set QuantLib's includeReferenceDateEvents / includeSettlementDateFlows to match, or avoid valuation dates the day before a payment, and state which.
 23. LegValues carries pv_protection as a fourth field. Accepted.
+
+## Resolved at the start of Section 6 (questions from review 05)
+
+24. Par spread definition, reversing item 21 (review 05, Against the plan 1): `par_spread_bp` is the clean-value spread PV_prot / (A − accrued_fraction / D), the spread at which `clean_upfront_pct` is zero. It is QuantLib's `fairSpread` and what the ISDA C bootstrap fits with `isPriceClean = TRUE`. The former dirty quantity PV_prot / A is kept as `dirty_par_spread_bp` on `Valuation`, not on `PriceResult`. The conversions calibrate the flat hazard to the clean spread. Section 6's objective per pillar is f(λ_i) = D·(PV_prot − s_i·A) + s_i·accrued_fraction = 0. Section 7 compares par spreads against `fairSpread` and the bootstrap against `ql.SpreadCdsHelper`. Section 6 criterion 2 expects every λ_i within 3% of 1.67% on the flat 100 bp curve, which the clean definition gives (1.680 to 1.681%) and the dirty one does not.
+25. Upfront quotes are clean (Against the plan 2): inception_cash = value/100 − c·accrued_days₀/360. Accepted.
+26. `upfront_to_quoted_spread` is one Brent on the hazard (Against the plan 3). Accepted.
+27. `price(state, trade, *, calendar, engine, half_day_bias)` keyword arguments (Against the plan 4); no calendar field on `CDSTrade`. Accepted.
+28. `price` raises when `trade.recovery` differs from `state.recovery.R(0)` (Against the plan 5). Accepted; Section 8's rec01 replaces both.
+29. Seasoned `accrued_days` counts to as_of + 1 (Against the plan 6). Accepted; Section 8 computes JTD's accrued to the valuation date from the schedule.
