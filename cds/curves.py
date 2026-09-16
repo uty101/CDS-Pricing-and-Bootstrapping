@@ -1,4 +1,4 @@
-"""The curves: DiscountCurve (Section 2); SurvivalCurve and RecoveryCurve follow in Section 3.
+"""The curves: DiscountCurve (Section 2), SurvivalCurve and RecoveryCurve (Section 3).
 
 DiscountCurve (BUILD_PLAN.md Part A.2, rows 1 and 2)
 
@@ -23,6 +23,31 @@ as_of itself (T+0), as docs/DATA_NOTE.md states. Nodes are solved one tenor at
 a time, shortest first; a payment date that falls between the previous node
 and the node being solved is interpolated log-linearly against the unknown,
 so the built curve reprices every input with its own interpolation.
+
+SurvivalCurve (BUILD_PLAN.md Part A.2 row 3, SPEC section 6.1)
+
+Piecewise-constant hazard lambda_i on the pillar interval (t_{i-1}, t_i],
+t_0 = 0, t_i act/365F years from as_of to pillar date i:
+
+    Q(t) = exp(-sum_i lambda_i * (t_i - t_{i-1}))   summed over the intervals up to t,
+    hazard(t) = lambda_i for t in (t_{i-1}, t_i],
+    density(t) = -dQ/dt = hazard(t) * Q(t).
+
+Beyond the last pillar the last hazard is extrapolated flat. hazard(0) is
+lambda_1. The closed right end of each interval matches QuantLib's
+backward-flat HazardRateCurve, which Section 7 hands the same pillars to.
+
+RecoveryCurve
+
+R(t), flat by default: RecoveryCurve.flat(R, as_of) returns the constant at
+every t. No section needs a term structure of recovery.
+
+with_as_of(new_as_of, mode) on all three curves, for Section 8's two thetas:
+mode "calendar" keeps every node on its calendar date and recomputes times
+from the new as_of (nodes that fall on or before the new date are dropped;
+the hazards and the discount factor ratios between surviving nodes are
+unchanged); mode "tenor" shifts every node date by the same number of days,
+so times and hazards are unchanged and the curve is the same function of t.
 """
 
 from __future__ import annotations
@@ -32,23 +57,37 @@ import math
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 import numpy as np
 from scipy.optimize import brentq
 
 from cds.calendars import adjust_following
-from cds.conventions import DEFAULT_CALENDAR
-from cds.schedule import year_fraction_act360, year_fraction_act365f
+from cds.conventions import DEFAULT_CALENDAR, PILLARS
+from cds.schedule import standard_maturity, year_fraction_act360, year_fraction_act365f
 
 __all__ = [
     "DiscountCurve",
+    "RecoveryCurve",
+    "ShiftMode",
+    "SurvivalCurve",
     "bootstrap_ois",
     "discount_curve_from_file",
     "ois_payment_dates",
     "par_rate_from_curve",
     "read_rates_file",
+    "standard_pillar_dates",
 ]
+
+# The two ways a curve moves to a later valuation date (BUILD_PLAN.md Part C
+# item 3): nodes fixed on their calendar dates, or fixed in tenor.
+ShiftMode = Literal["calendar", "tenor"]
+SHIFT_MODES = ("calendar", "tenor")
+
+
+def _check_mode(mode: str) -> None:
+    if mode not in SHIFT_MODES:
+        raise ValueError(f"unknown shift mode {mode!r}; expected one of {SHIFT_MODES}")
 
 MONTHS_PER_YEAR = 12
 
@@ -161,6 +200,188 @@ class DiscountCurve:
     def df_on(self, d: date) -> float:
         """P at a calendar date."""
         return self.df(year_fraction_act365f(self.as_of, d))
+
+    def with_as_of(self, new_as_of: date, mode: ShiftMode) -> DiscountCurve:
+        """The curve seen from a later valuation date.
+
+        "calendar": nodes stay on their dates; those on or before new_as_of
+        are dropped and the survivors are divided by P(new_as_of), so every
+        ratio P(d2)/P(d1) between surviving nodes, and every forward, is
+        unchanged. The input par rates no longer describe the nodes and are
+        not carried. "tenor": every node date moves by (new_as_of - as_of)
+        days, so node_times and node_dfs are unchanged and the inputs are
+        kept.
+        """
+        _check_mode(mode)
+        if mode == "tenor":
+            shift = new_as_of - self.as_of
+            return DiscountCurve(
+                as_of=new_as_of,
+                node_dates=tuple(d + shift for d in self.node_dates),
+                node_dfs=self.node_dfs,
+                tenors=self.tenors,
+                par_rates_pct=self.par_rates_pct,
+                calendar=self.calendar,
+            )
+        if new_as_of < self.as_of:
+            raise ValueError("calendar mode needs new_as_of on or after as_of")
+        p_new = self.df_on(new_as_of)
+        kept = [(d, p / p_new) for d, p in zip(self.node_dates, self.node_dfs) if d > new_as_of]
+        if not kept:
+            raise ValueError("no discount node is after the new as_of")
+        return DiscountCurve(
+            as_of=new_as_of,
+            node_dates=tuple(d for d, _ in kept),
+            node_dfs=tuple(p for _, p in kept),
+            calendar=self.calendar,
+        )
+
+
+def standard_pillar_dates(as_of: date) -> tuple[date, ...]:
+    """The pillar dates of a curve valued on as_of: the standard maturities
+    of the tenors in PILLARS (BUILD_PLAN.md Part A.2 row 3)."""
+    return tuple(standard_maturity(as_of, tenor) for tenor in PILLARS)
+
+
+@dataclass(frozen=True)
+class SurvivalCurve:
+    """Piecewise-constant hazard curve. Times are act/365F years from as_of.
+
+    pillar_hazards[i] is lambda_i, flat on (t_{i-1}, t_i] with t_0 = 0 and
+    t_i the act/365F time to pillar_dates[i]. Hazards are annualised
+    intensities (0.01 is 1% a year), never in bp.
+    """
+
+    as_of: date
+    pillar_dates: tuple[date, ...]
+    pillar_hazards: tuple[float, ...]
+    pillar_times: tuple[float, ...] = field(init=False)
+    _times: np.ndarray = field(init=False, repr=False, compare=False)
+    _hazards: np.ndarray = field(init=False, repr=False, compare=False)
+    _cum_hazard: np.ndarray = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if not self.pillar_dates:
+            raise ValueError("a survival curve needs at least one pillar")
+        if len(self.pillar_dates) != len(self.pillar_hazards):
+            raise ValueError("pillar_dates and pillar_hazards differ in length")
+        if any(d1 <= d0 for d0, d1 in zip((self.as_of, *self.pillar_dates), self.pillar_dates)):
+            raise ValueError("pillar_dates must be strictly increasing and after as_of")
+        if any(not math.isfinite(h) for h in self.pillar_hazards):
+            raise ValueError("hazards must be finite")
+        if any(h < 0 for h in self.pillar_hazards):
+            raise ValueError("hazards must be non-negative")
+        times = tuple(year_fraction_act365f(self.as_of, d) for d in self.pillar_dates)
+        hazards = np.array(self.pillar_hazards, dtype=float)
+        nodes = np.array((0.0, *times))
+        # H_i = sum_{k<=i} lambda_k (t_k - t_{k-1}), the cumulative hazard at pillar i; H_0 = 0.
+        cum = np.concatenate(([0.0], np.cumsum(hazards * np.diff(nodes))))
+        object.__setattr__(self, "pillar_times", times)
+        object.__setattr__(self, "pillar_hazards", tuple(float(h) for h in hazards))
+        object.__setattr__(self, "_times", nodes)
+        object.__setattr__(self, "_hazards", hazards)
+        object.__setattr__(self, "_cum_hazard", cum)
+
+    @classmethod
+    def flat(cls, as_of: date, hazard: float, pillar_dates: tuple[date, ...] | None = None) -> SurvivalCurve:
+        """One hazard on every pillar; the standard pillars unless given."""
+        dates = standard_pillar_dates(as_of) if pillar_dates is None else tuple(pillar_dates)
+        return cls(as_of=as_of, pillar_dates=dates, pillar_hazards=tuple(float(hazard) for _ in dates))
+
+    def _interval(self, t: np.ndarray) -> np.ndarray:
+        """0-based index i of the interval (t_{i-1}, t_i] holding t; t = 0
+        and t beyond the last pillar map to the first and last interval."""
+        idx = np.searchsorted(self._times[1:], t, side="left")
+        return np.clip(idx, 0, len(self._hazards) - 1)
+
+    def cumulative_hazard(self, t: float) -> float:
+        """H(t) = -ln Q(t) = sum over the intervals up to t of lambda_i * length."""
+        arr = np.asarray(t, dtype=float)
+        if np.any(arr < 0):
+            raise ValueError("t must be non-negative")
+        i = self._interval(arr)
+        out = self._cum_hazard[i] + self._hazards[i] * (arr - self._times[i])
+        return float(out) if out.ndim == 0 else out
+
+    def Q(self, t: float) -> float:  # noqa: N802 - the spec's symbol
+        """Survival probability Q(t) = exp(-H(t)); Q(0) = 1."""
+        out = np.exp(-np.asarray(self.cumulative_hazard(t)))
+        return float(out) if out.ndim == 0 else out
+
+    def hazard(self, t: float) -> float:
+        """lambda(t): lambda_i for t in (t_{i-1}, t_i], lambda_1 at t = 0, the
+        last hazard beyond the last pillar."""
+        arr = np.asarray(t, dtype=float)
+        if np.any(arr < 0):
+            raise ValueError("t must be non-negative")
+        out = self._hazards[self._interval(arr)]
+        return float(out) if out.ndim == 0 else out
+
+    def density(self, t: float) -> float:
+        """Default density -dQ/dt = lambda(t) * Q(t)."""
+        out = np.asarray(self.hazard(t)) * np.asarray(self.Q(t))
+        return float(out) if out.ndim == 0 else out
+
+    def Q_on(self, d: date) -> float:  # noqa: N802 - the spec's symbol
+        """Q at a calendar date."""
+        return self.Q(year_fraction_act365f(self.as_of, d))
+
+    def with_as_of(self, new_as_of: date, mode: ShiftMode) -> SurvivalCurve:
+        """The curve seen from a later valuation date.
+
+        "calendar": pillars stay on their dates; those on or before
+        new_as_of are dropped and the rest keep their hazards, so
+        Q(d2)/Q(d1) between any two surviving pillar dates is unchanged.
+        "tenor": every pillar date moves by (new_as_of - as_of) days, so
+        pillar_times and pillar_hazards are unchanged.
+        """
+        _check_mode(mode)
+        if mode == "tenor":
+            shift = new_as_of - self.as_of
+            return SurvivalCurve(
+                as_of=new_as_of,
+                pillar_dates=tuple(d + shift for d in self.pillar_dates),
+                pillar_hazards=self.pillar_hazards,
+            )
+        if new_as_of < self.as_of:
+            raise ValueError("calendar mode needs new_as_of on or after as_of")
+        kept = [(d, h) for d, h in zip(self.pillar_dates, self.pillar_hazards) if d > new_as_of]
+        if not kept:
+            raise ValueError("no pillar is after the new as_of")
+        return SurvivalCurve(
+            as_of=new_as_of,
+            pillar_dates=tuple(d for d, _ in kept),
+            pillar_hazards=tuple(h for _, h in kept),
+        )
+
+
+@dataclass(frozen=True)
+class RecoveryCurve:
+    """Recovery rate R(t). Flat: the same fraction of notional at every t."""
+
+    as_of: date
+    recovery: float
+
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.recovery <= 1.0):
+            raise ValueError(f"recovery {self.recovery!r} is not in [0, 1]")
+
+    @classmethod
+    def flat(cls, recovery: float, as_of: date) -> RecoveryCurve:
+        return cls(as_of=as_of, recovery=float(recovery))
+
+    def R(self, t: float) -> float:  # noqa: N802 - the spec's symbol
+        """R(t): the constant, for a float or an array of t."""
+        arr = np.asarray(t, dtype=float)
+        if np.any(arr < 0):
+            raise ValueError("t must be non-negative")
+        out = np.full_like(arr, self.recovery)
+        return float(out) if out.ndim == 0 else out
+
+    def with_as_of(self, new_as_of: date, mode: ShiftMode) -> RecoveryCurve:
+        """A flat recovery is the same in both modes; only as_of changes."""
+        _check_mode(mode)
+        return RecoveryCurve(as_of=new_as_of, recovery=self.recovery)
 
 
 def _par_rate(as_of: date, pay_dates: tuple[date, ...], df_at: Callable[[date], float]) -> float:

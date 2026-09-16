@@ -68,3 +68,12 @@ CURVE_IDENTITY_ABS_TOL = 1e-12
 # Section 2: two bootstraps of the same par equations (ours and QuantLib's)
 # agree to solver precision; 1e-10 in P is under 1e-7 bp of rate.
 QL_DISCOUNT_ABS_TOL = 1e-10
+
+# Section 3: the density integrated with scipy quad per pillar interval, on a
+# smooth integrand, against 1 - Q(T); the plan's bar, far above quad's own
+# error estimate.
+DENSITY_INTEGRAL_ABS_TOL = 1e-9
+
+# Section 3: QuantLib's backward-flat HazardRateCurve integrates the same
+# piecewise-constant hazard over the same act/365F times; 1e-12 is float noise.
+QL_SURVIVAL_ABS_TOL = 1e-12
