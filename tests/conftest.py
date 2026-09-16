@@ -77,3 +77,16 @@ DENSITY_INTEGRAL_ABS_TOL = 1e-9
 # Section 3: QuantLib's backward-flat HazardRateCurve integrates the same
 # piecewise-constant hazard over the same act/365F times; 1e-12 is float noise.
 QL_SURVIVAL_ABS_TOL = 1e-12
+
+# Section 4: the grid's error against the closed form is first order in the
+# step, so halving the step halves it; the band allows for the coupon-date
+# points that break the regular spacing.
+GRID_CONVERGENCE_RATIO = (1.9, 2.1)
+
+# Section 4: half a day of accrual on default over a 5Y contract at 1% hazard
+# moves the par spread by about 0.001 bp; the plan's bar is 0.02.
+HALF_DAY_BIAS_BP = 0.02
+
+# Section 4: QuantLib's IsdaCdsEngine evaluates the same closed form on the
+# same merged grid, so the leg values differ by float noise only.
+QL_LEGS_ABS_TOL = 1e-12
