@@ -25,3 +25,8 @@ Section 9, acceptance criterion 2 had the sign of spread convexity backwards. Th
 10. First accrual date (review 01, Not verified item 1): the QuantLib step-back rule stands. It differs from the ISDA C library reading only when the step-in date is a weekend 20th, i.e. only for weekend trade dates, which do not occur in practice. All illustrative trades from Section 5 on use business-day trade dates, and price() raises ValueError on a trade date that is not a business day on the trade's calendar (implemented in Section 5, not now).
 11. quarterly_2009 coupon schedules (item 2): not checked against DateGeneration.CDS; accepted, the pre-2015 rule is only used for the maturity comparison.
 12. Quote and CDSTrade invariants (item 4): enforced in Section 5 as the plan says.
+
+## Resolved at the start of Section 3 (questions from review 02)
+
+13. OIS spot date (review 02, rule 2): the discount curve is built with spot = as_of (T+0), not the market's T+2. Accepted; the difference on a 5Y CDS upfront is under 0.1 bp. Section 7 lists this as a known source of sub-0.1 bp difference before hunting elsewhere.
+14. Rates sources (review 02, Against the plan 1 and 2): BlueGamma 1Y to 30Y and CME Term SOFR 1M to 6M, valuation date 15 Sep 2026, accepted as the project's single snapshot. Not verified items 1 and 2 (fixed-leg convention of the source, 0.5 bp rounding) accepted as stated.

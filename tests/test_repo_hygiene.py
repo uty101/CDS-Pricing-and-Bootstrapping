@@ -32,12 +32,20 @@ BINARY_SUFFIXES = {".docx", ".png", ".lock", ".pdf"}
 CONVENTION_LITERAL_RE = re.compile(r"(/\s*36[05]\b)|(=\s*36[05]\b)|(=\s*0\.(40|25|20)\b)")
 
 
+# Python 3.12 tokenizes f-strings into parts; the literal text between the
+# braces arrives as FSTRING_MIDDLE, not STRING. On 3.11 the attribute does
+# not exist and the tuple is unchanged.
+NON_CODE_TOKEN_TYPES = tuple(
+    t for t in (tokenize.STRING, tokenize.COMMENT, tokenize.ENCODING, getattr(tokenize, "FSTRING_MIDDLE", None)) if t is not None
+)
+
+
 def code_lines(path: Path) -> dict[int, str]:
     """Source lines with string and comment tokens removed."""
     out: dict[int, list[str]] = {}
     with path.open("rb") as fh:
         for tok in tokenize.tokenize(fh.readline):
-            if tok.type in (tokenize.STRING, tokenize.COMMENT, tokenize.ENCODING):
+            if tok.type in NON_CODE_TOKEN_TYPES:
                 continue
             out.setdefault(tok.start[0], []).append(tok.string)
     return {n: " ".join(parts) for n, parts in out.items()}
