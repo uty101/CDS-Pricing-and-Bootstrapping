@@ -583,7 +583,11 @@ PV_prot = (1 − R)·protection.
 
 `isda` engine. Merged grid = {step-in} ∪ discount nodes ∪ survival pillars
 ∪ coupon accrual dates ∪ {maturity}, as act/365F times u_0 < ... < u_M
-from `as_of`, restricted to (t_stepin, T]. On (a, b] with flat λ and flat
+from `as_of`, restricted to (t_0, T] with t_0 = t(max(step-in, as_of + 1 day)
+− 1 day), QuantLib's end-of-day reading of the ISDA model (0 for a new trade
+valued on its trade date; docs/CONVENTIONS_RESOLVED.md item 19, which also
+fixes the coupon-on-survival observation date at pay − 1 day and the
+accrual-on-default limits and origin). On (a, b] with flat λ and flat
 forward f = forward(a, b), k = λ + f, τ = b − a:
 - protection: ∫_a^b P(u)λQ(u)du = P(a)Q(a)·λ/k·(1 − e^{−kτ})
 - accrual on default for the coupon period starting at t_{j−1} that

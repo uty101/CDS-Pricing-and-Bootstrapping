@@ -37,3 +37,11 @@ Section 9, acceptance criterion 2 had the sign of spread convexity backwards. Th
 16. Survival curve calendar shift (Against the plan 2): pillars on or before the new as_of are dropped, hazards between the same dates unchanged. Accepted.
 17. Discount curve tenor shift (Not verified 2): node dates move by days, no re-bootstrap. Section 8 theta-rolldown uses this path and says so in its docstring.
 18. Pillar dates on the snapshot date: standard_pillar_dates(15 Sep 2026) puts the 6M pillar on 20 Dec 2026, 96 days out. Section 6's data note states this next to each curve file.
+
+## Resolved at the start of Section 5 (questions from review 04)
+
+19. Leg integration limits (review 04, Against the plan 1 to 3): QuantLib IsdaCdsEngine's end-of-day reading stands. Protection integrates from t(max(step_in, as_of + 1) − 1 day); coupon on survival uses Q(pay − 1 day); accrual on default runs from max(accrual_start, effective start) − 1 day to pay − 1 day with origin t(accrual_start − 1 day) − 0.5/365 under the half-day bias. BUILD_PLAN.md Section 4 rules are read this way; edit the "(t_stepin, T]" phrase in Section 4 to say so.
+20. Credit triangle (Against the plan 6): stated with act/365F daily fractions; the act/360 version equals λ(1 − R)·360/365, asserted exactly.
+21. Par spread definition for Section 7 (Against the plan 9): par spread is PV_prot / (A_coupon + A_accrual) at the valuation date. Section 7 compares leg NPVs and fairUpfront against QuantLib, never fairSpread, which is the clean-value spread.
+22. Coupon inclusion on seasoned trades (Not verified 2): a coupon paying after as_of is included. QuantLib excludes one paying on as_of + 1 by default; Section 8's oracle tests set QuantLib's includeReferenceDateEvents / includeSettlementDateFlows to match, or avoid valuation dates the day before a payment, and state which.
+23. LegValues carries pv_protection as a fourth field. Accepted.

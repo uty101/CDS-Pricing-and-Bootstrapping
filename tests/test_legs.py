@@ -267,24 +267,25 @@ def test_rejects_bad_inputs(discount: DiscountCurve, schedule_5y: Schedule) -> N
 
 # --- oracle: QuantLib's IsdaCdsEngine ----------------------------------------
 
+# Weekend maturities (review 04, Not verified 4): the 6M and 1Y pillars of
+# this snapshot both fall on a Sunday, so the last accrual integral ends at
+# pay - 1 = maturity, and the final coupon pays on the Monday after.
+WEEKEND_MATURITIES = (date(2026, 12, 20), date(2027, 6, 20))
 
-@pytest.mark.parametrize("tenor", ["5Y", "10Y"])
-@pytest.mark.parametrize("name", list(CURVES))
-@pytest.mark.parametrize("half_day_bias", [True, False])
-def test_legs_match_quantlib_isda_engine(discount: DiscountCurve, tenor: str, name: str, half_day_bias: bool) -> None:
-    """couponLegNPV / spread is the dirty annuity with accrual on default;
-    defaultLegNPV is (1 - R) times the default integral. Flags: Taylor,
-    HalfDayBias or NoBias, Piecewise, as Section 7 will use."""
+
+def _quantlib_legs(discount: DiscountCurve, name: str, maturity: date, half_day_bias: bool) -> tuple[float, float]:
+    """QuantLib's (A, PV_prot) for the same trade: couponLegNPV / spread is
+    the dirty annuity with accrual on default; defaultLegNPV is (1 - R) times
+    the default integral. Flags: Taylor, HalfDayBias or NoBias, Piecewise, as
+    Section 7 will use."""
     import QuantLib as ql
 
     def to_ql(d: date) -> ql.Date:
         return ql.Date(d.day, d.month, d.year)
 
     hazards, recovery_rate = CURVES[name]
-    survival, recovery = _curve(name)
-    maturity = standard_maturity(AS_OF, tenor)
+    survival, _ = _curve(name)
     schedule = cds_schedule(AS_OF, maturity)
-    ours = leg_values(discount, survival, recovery, schedule, AS_OF, half_day_bias=half_day_bias)
 
     ql.Settings.instance().evaluationDate = to_ql(AS_OF)
     ql_discount = ql.DiscountCurve([to_ql(AS_OF), *map(to_ql, discount.node_dates)], [1.0, *discount.node_dfs], ql.Actual365Fixed())
@@ -306,7 +307,30 @@ def test_legs_match_quantlib_isda_engine(discount: DiscountCurve, tenor: str, na
             False, ql.IsdaCdsEngine.Taylor, bias, ql.IsdaCdsEngine.Piecewise,
         )
     )
-    annuity_ql = -cds.couponLegNPV() / spread  # the buyer pays the coupon leg
-    protection_ql = cds.defaultLegNPV()
+    return -cds.couponLegNPV() / spread, cds.defaultLegNPV()  # the buyer pays the coupon leg
+
+
+def _assert_legs_match_quantlib(discount: DiscountCurve, name: str, maturity: date, half_day_bias: bool) -> None:
+    survival, recovery = _curve(name)
+    ours = leg_values(discount, survival, recovery, cds_schedule(AS_OF, maturity), AS_OF, half_day_bias=half_day_bias)
+    annuity_ql, protection_ql = _quantlib_legs(discount, name, maturity, half_day_bias)
     assert abs(ours.annuity - annuity_ql) < QL_LEGS_ABS_TOL
     assert abs(ours.pv_protection - protection_ql) < QL_LEGS_ABS_TOL
+
+
+@pytest.mark.parametrize("tenor", ["5Y", "10Y"])
+@pytest.mark.parametrize("name", list(CURVES))
+@pytest.mark.parametrize("half_day_bias", [True, False])
+def test_legs_match_quantlib_isda_engine(discount: DiscountCurve, tenor: str, name: str, half_day_bias: bool) -> None:
+    _assert_legs_match_quantlib(discount, name, standard_maturity(AS_OF, tenor), half_day_bias)
+
+
+@pytest.mark.parametrize("maturity", WEEKEND_MATURITIES, ids=lambda d: d.isoformat())
+@pytest.mark.parametrize("name", ["flat", "inverted"])
+@pytest.mark.parametrize("half_day_bias", [True, False])
+def test_legs_match_quantlib_on_weekend_maturities(discount: DiscountCurve, maturity: date, name: str, half_day_bias: bool) -> None:
+    """The unadjusted maturity is a Sunday: the last coupon pays on the
+    Monday and its accrual integral ends on the Sunday, one day past the
+    protection end."""
+    assert maturity.weekday() == 6  # Sunday
+    _assert_legs_match_quantlib(discount, name, maturity, half_day_bias)
