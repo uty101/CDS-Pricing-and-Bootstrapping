@@ -30,3 +30,10 @@ Section 9, acceptance criterion 2 had the sign of spread convexity backwards. Th
 
 13. OIS spot date (review 02, rule 2): the discount curve is built with spot = as_of (T+0), not the market's T+2. Accepted; the difference on a 5Y CDS upfront is under 0.1 bp. Section 7 lists this as a known source of sub-0.1 bp difference before hunting elsewhere.
 14. Rates sources (review 02, Against the plan 1 and 2): BlueGamma 1Y to 30Y and CME Term SOFR 1M to 6M, valuation date 15 Sep 2026, accepted as the project's single snapshot. Not verified items 1 and 2 (fixed-leg convention of the source, 0.5 bp rounding) accepted as stated.
+
+## Resolved at the start of Section 4 (questions from review 03)
+
+15. Hazard continuity (review 03, Against the plan 1): the plan's word "right-continuous" was a slip. The hazard is flat on (t_{i-1}, t_i], so hazard(t_i) = λ_i and hazard(t_i + ε) = λ_{i+1}, continuous from the left. Code and tests stand; the wording of Section 3 criterion 5 in BUILD_PLAN.md is edited to match.
+16. Survival curve calendar shift (Against the plan 2): pillars on or before the new as_of are dropped, hazards between the same dates unchanged. Accepted.
+17. Discount curve tenor shift (Not verified 2): node dates move by days, no re-bootstrap. Section 8 theta-rolldown uses this path and says so in its docstring.
+18. Pillar dates on the snapshot date: standard_pillar_dates(15 Sep 2026) puts the 6M pillar on 20 Dec 2026, 96 days out. Section 6's data note states this next to each curve file.
