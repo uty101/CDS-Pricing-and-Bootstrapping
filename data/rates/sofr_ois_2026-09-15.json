@@ -1,0 +1,30 @@
+{
+  "as_of": "2026-09-15",
+  "fixed_frequency": "annual",
+  "fixed_day_count": "act/360",
+  "tenors": ["1M", "3M", "6M", "1Y", "2Y", "3Y", "4Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"],
+  "par_rates_pct": [3.88572, 3.97991, 4.12897, 4.30, 4.48, 4.56, 4.55, 4.55, 4.56, 4.60, 4.70, 4.74, 4.66],
+  "source_by_tenor": [
+    "CME Term SOFR 1M, 15 Sep 2026 fixing, read from global-rates.com",
+    "CME Term SOFR 3M, 15 Sep 2026 fixing, read from global-rates.com",
+    "CME Term SOFR 6M, 15 Sep 2026 fixing, read from global-rates.com",
+    "BlueGamma USD SOFR swap rate 1Y, 15 Sep 2026 close",
+    "BlueGamma USD SOFR swap rate 2Y, 15 Sep 2026 close",
+    "BlueGamma USD SOFR swap rate 3Y, 15 Sep 2026 close",
+    "BlueGamma USD SOFR swap rate 4Y, 15 Sep 2026 close",
+    "BlueGamma USD SOFR swap rate 5Y, 15 Sep 2026 close",
+    "BlueGamma USD SOFR swap rate 7Y, 15 Sep 2026 close",
+    "BlueGamma USD SOFR swap rate 10Y, 15 Sep 2026 close",
+    "BlueGamma USD SOFR swap rate 15Y, 15 Sep 2026 close",
+    "BlueGamma USD SOFR swap rate 20Y, 15 Sep 2026 close",
+    "BlueGamma USD SOFR swap rate 30Y, 15 Sep 2026 close"
+  ],
+  "source": "1M, 3M, 6M: CME Term SOFR fixings for 15 Sep 2026 as republished by global-rates.com. 1Y to 30Y: BlueGamma public USD SOFR swap-rate page, 15 Sep 2026 close (London 21:00), quoted to 2 decimal places.",
+  "source_url": "https://www.bluegamma.io/usd-swap-rates",
+  "source_urls": {
+    "bluegamma_usd_sofr_swaps": "https://www.bluegamma.io/usd-swap-rates",
+    "cme_term_sofr_via_global_rates": "https://www.global-rates.com/en/interest-rates/cme-term-sofr/"
+  },
+  "snapshot_taken": "2026-09-16",
+  "note": "Illustrative. docs/CONVENTIONS_RESOLVED.md item 4 names ICE Swap Rate for 1Y to 30Y; on 16 Sep 2026 ice.com published no fixings on a free page (methodology and monthly volume reports only), so the 1Y to 30Y rows come from BlueGamma's public page instead, which builds its mids from interdealer broker and exchange quotes and shows them to 2 decimal places (0.5 bp rounding). The 1M and 3M rows from the two sources agree to the rounding (3.89 / 3.98 on BlueGamma), which is the only cross-check available. Term SOFR is a forward-looking term rate, not an OIS par rate; the gap is a few bp at 6M and moves a 5Y CDS upfront by well under 0.1 bp (BUILD_PLAN.md Part B item 4). The rates are the last complete set at the time of reading (the 16 Sep 11:00 New York fixing had not happened), so as_of is 15 Sep 2026 and every illustrative curve is valued on that date. Bootstrapped as annual fixed act/360 against compounded SOFR, single payment under 1Y, spot date = as_of (T+0), payment dates rolled Following on a weekend-only calendar; the sources' own conventions (BlueGamma mids, Term SOFR act/360 simple) are close to but not stated as exactly this."
+}

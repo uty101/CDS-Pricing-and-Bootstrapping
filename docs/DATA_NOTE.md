@@ -57,7 +57,33 @@ Snapshot date, page URL and the date the page was read are recorded in the
 file and here when Section 2 runs. Fields: `source`, `source_url`,
 `snapshot_taken`, `note`.
 
-_Section 2 fills in:_ snapshot date ____, source ____, read on ____.
+Section 2 snapshot: `data/rates/sofr_ois_2026-09-15.json`, rates for
+**15 September 2026**, read on **16 September 2026**.
+
+- 1M, 3M, 6M: CME Term SOFR fixings for 15 Sep 2026 (3.88572, 3.97991,
+  4.12897), read from global-rates.com
+  (`https://www.global-rates.com/en/interest-rates/cme-term-sofr/`);
+  cmegroup.com refuses automated reads. Term SOFR is a forward-looking term
+  rate, not an OIS par rate; the gap is a few bp at 6M and moves a 5Y CDS
+  upfront by well under 0.1 bp (plan Part B item 4).
+- 1Y to 30Y: BlueGamma's public USD SOFR swap-rate page
+  (`https://www.bluegamma.io/usd-swap-rates`), 15 Sep 2026 close (21:00
+  London), mids built from interdealer broker and exchange quotes, shown to
+  2 decimal places (so each rate carries up to 0.5 bp of rounding). **This is
+  a substitution**: `docs/CONVENTIONS_RESOLVED.md` item 4 names ICE Swap Rate
+  for these tenors, but on 16 Sep 2026 ice.com published no fixings on a
+  free page (the ICE Swap Rate page carries methodology documents and the
+  report centre lists only a monthly volume report), and the values are
+  licensed. BlueGamma's 1M and 3M rows (3.89, 3.98) agree with the Term SOFR
+  fixings to the rounding, which is the only cross-check available.
+- The rates are the last complete set at the time of reading: the 16 Sep
+  11:00 New York swap fixing had not happened. So the snapshot date, and the
+  valuation date of every illustrative curve, is 15 Sep 2026, one day before
+  the Section 2 session.
+- Bootstrapped as annual fixed act/360 against compounded SOFR, single
+  payment under 1Y, spot date = `as_of` (T+0), payment dates rolled Following
+  on a weekend-only calendar. The sources' own conventions are close to but
+  not stated as exactly this; the file's `note` says so.
 
 ## Sourced: historical cumulative default rates (`data/defaults/`, Section 10)
 

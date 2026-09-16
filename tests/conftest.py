@@ -59,3 +59,12 @@ GRID_SECONDS = 10.0
 
 # Section 1: accrual fractions are ratios of integers; 1e-12 is float noise.
 DAY_COUNT_ABS_TOL = 1e-12
+
+# Section 2: the interpolation identities (log-linearity, flat extrapolation,
+# forward from the DF ratio) hold exactly in exact arithmetic; 1e-12 is float
+# noise.
+CURVE_IDENTITY_ABS_TOL = 1e-12
+
+# Section 2: two bootstraps of the same par equations (ours and QuantLib's)
+# agree to solver precision; 1e-10 in P is under 1e-7 bp of rate.
+QL_DISCOUNT_ABS_TOL = 1e-10
