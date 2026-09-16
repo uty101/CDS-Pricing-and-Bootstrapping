@@ -931,9 +931,13 @@ pnl_rates, pnl_theta, pnl_cross, residual, residual_pct_of_total`:
 **Acceptance criteria.**
 1. Residual under 2% of `pnl_full` (`EXPLAIN_RESIDUAL_PCT`) for a 10 bp
    parallel move on IG and HY.
-2. `pnl_spread_gamma` is positive for the protection buyer for a +100 bp
-   parallel move (buyer is long convexity: MTM is convex in spread) and
-   the sign is stated in the docstring with the reason.
+2. `pnl_spread_gamma` is negative for the protection buyer on a +100 bp
+   parallel move, and the docstring states the reason: the buyer's MTM is
+   (s − c)·A(s) and the risky annuity A falls as s rises, so the MTM is
+   concave in spread; the buyer is short convexity and CS01 shrinks as
+   spreads widen. (Corrected from "positive" in `docs/CONVENTIONS_RESOLVED.md`,
+   checked there on the flat-hazard textbook model at s = 100 and 500 bp,
+   c = 100 bp, R = 40%, r = 4%, T = 5.)
 3. Full revaluation of the Chart 3 sweep (71 scenarios) plus the Table 4
    scenarios runs in under 10 seconds (`GRID_SECONDS`) wall clock, timed in
    the test.
