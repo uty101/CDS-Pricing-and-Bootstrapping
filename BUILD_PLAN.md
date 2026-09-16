@@ -555,8 +555,8 @@ times (nodes fixed in date); `mode="tenor"` shifts every pillar date by
 4. `with_as_of(+30 days, "calendar")` leaves Q between any two pillar dates
    unchanged as a ratio, `Q(d2)/Q(d1)` equal to 1e-12; `"tenor"` leaves
    `pillar_times` and `pillar_hazards` unchanged to 1e-12.
-5. `hazard(t)` is right-continuous at the pillars: `hazard(t_i)` is λ_i and
-   `hazard(t_i + 1e-9)` is λ_{i+1}.
+5. `hazard(t)` is continuous from the left at the pillars (λ_i flat on
+   (t_{i−1}, t_i]): `hazard(t_i)` is λ_i and `hazard(t_i + 1e-9)` is λ_{i+1}.
 6. Negative hazards raise `ValueError` at construction.
 
 **Tests.** `tests/test_survival.py`.
