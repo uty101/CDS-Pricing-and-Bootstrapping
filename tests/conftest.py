@@ -90,3 +90,43 @@ HALF_DAY_BIAS_BP = 0.02
 # Section 4: QuantLib's IsdaCdsEngine evaluates the same closed form on the
 # same merged grid, so the leg values differ by float noise only.
 QL_LEGS_ABS_TOL = 1e-12
+
+# Section 5: at the par coupon the dirty upfront is zero up to float noise in
+# the legs; the plan's bar is 0.01 bp of notional.
+PAR_UPFRONT_BP = 0.01
+
+# Section 5: the same identity in currency on $10m; the plan's "under $1".
+PAR_UPFRONT_USD = 1.0
+
+# Section 5: the par spread is a ratio of two leg values and repricing at
+# that coupon returns it to float precision; the plan's 1e-9 bp.
+PAR_SPREAD_REPRICE_BP = 1e-9
+
+# Section 5: spread -> upfront -> spread is two Brent solves with xtol 1e-12
+# in the hazard, about 1e-8 bp of spread; the plan's 1e-6 bp.
+CONVERSION_ROUNDTRIP_BP = 1e-6
+
+# Section 5: settlement discounting, the accrued and the side sign are single
+# multiplications of leg values; 1e-12 is float noise.
+PRICER_IDENTITY_ABS_TOL = 1e-12
+
+# Section 5: QuantLib's accrualRebate is the same integer day count times the
+# same coupon and notional; 1e-6 currency on $10m is float noise.
+QL_ACCRUED_ABS_USD = 1e-6
+
+# Section 5: the textbook formulas are closed forms; 1e-12 is float noise.
+TEXTBOOK_ABS_TOL = 1e-12
+
+# Section 5: the flat-hazard solve is a Brent with xtol 1e-12 in the hazard;
+# 1e-9 leaves room for the rounding of the par spread it inverts.
+FLAT_HAZARD_SOLVE_ABS_TOL = 1e-9
+
+# Section 5: a flat hazard has one credit-triangle spread and the clean-value
+# spread sees it on every tenor up to the discounting of the one-day coupon
+# lag; 0.03 bp between 6M and 10Y on the flat 1% curve, bar 0.1.
+CLEAN_SPREAD_TENOR_RANGE_BP = 0.1
+
+# Section 5: QuantLib's fairUpfront and fairSpread are the same leg values
+# through the same settlement discounting and accrual rebate; the largest
+# gap seen is 3e-10 bp (inverted 6M), from the order of the divisions.
+QL_PRICER_ABS_TOL = 1e-9
