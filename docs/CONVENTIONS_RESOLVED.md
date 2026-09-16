@@ -19,3 +19,9 @@ Section 9, acceptance criterion 2 had the sign of spread convexity backwards. Th
 ## Housekeeping
 
 `Project Outline/11_CDS_Pricing_Bootstrap.docx` removed from the repo root; the copy under `docs/` is the one referenced.
+
+## Resolved at the start of Section 2 (questions from review 01)
+
+10. First accrual date (review 01, Not verified item 1): the QuantLib step-back rule stands. It differs from the ISDA C library reading only when the step-in date is a weekend 20th, i.e. only for weekend trade dates, which do not occur in practice. All illustrative trades from Section 5 on use business-day trade dates, and price() raises ValueError on a trade date that is not a business day on the trade's calendar (implemented in Section 5, not now).
+11. quarterly_2009 coupon schedules (item 2): not checked against DateGeneration.CDS; accepted, the pre-2015 rule is only used for the maturity comparison.
+12. Quote and CDSTrade invariants (item 4): enforced in Section 5 as the plan says.
