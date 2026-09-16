@@ -54,6 +54,21 @@ plan corrects the spec, the plan wins, and the plan says so explicitly in its
 - Every curve object carries its own `as_of`; `price()` raises if the three
   curves in a `MarketState` disagree.
 
+## Reviews and questions go to GitHub
+
+The user reviews from the Claude app, not from the repo. So every section
+ends with one more step after the push: post the review file as a GitHub
+issue on `uty101/CDS-Pricing-and-Bootstrapping`, titled exactly as the
+review's H1, labelled `review`, with a "Questions for the reviewer" list at
+the top (every "Against the plan" item and every decision the user must
+make, numbered, each ending in a question) and the full review file below
+a rule. Use `uv run python scripts/gh_issue.py --title "..." --body-file
+<file> --label review`; it reads the GitHub token git already stores and
+never prints it. Any question that arises mid-section and cannot wait is
+posted the same way, as its own issue. The next session reads the previous
+section's issue comments before starting and commits the answers to
+`docs/CONVENTIONS_RESOLVED.md` where they change a convention.
+
 ## Environment
 
 - `uv` manages the environment. `uv sync` installs; `uv run pytest -q` tests.
