@@ -21,8 +21,8 @@ from cds.legs import (
     TAYLOR_THRESHOLD,
     LegValues,
     _isda_intervals,
+    dirty_par_spread_bp,
     leg_values,
-    par_spread_bp,
     protection_start_date,
 )
 from cds.schedule import Schedule, cds_schedule, standard_maturity, year_fraction_act360, year_fraction_act365f
@@ -86,14 +86,17 @@ def _legs(discount: DiscountCurve, name: str, schedule: Schedule, **kwargs) -> L
 
 
 # --- criterion 1: the two engines agree -------------------------------------
+# Compared on the dirty par spread PV_prot / A, a property of the legs alone;
+# the reported par spread is the clean-value one (item 24), which adds the
+# settlement factor and the accrued and is the pricer's to test.
 
 
 @pytest.mark.parametrize("name", list(CURVES))
 @pytest.mark.parametrize("half_day_bias", [True, False])
-def test_isda_and_grid_par_spreads_agree(discount: DiscountCurve, schedule_5y: Schedule, name: str, half_day_bias: bool) -> None:
+def test_isda_and_grid_dirty_par_spreads_agree(discount: DiscountCurve, schedule_5y: Schedule, name: str, half_day_bias: bool) -> None:
     isda = _legs(discount, name, schedule_5y, half_day_bias=half_day_bias, engine="isda")
     grid = _legs(discount, name, schedule_5y, half_day_bias=half_day_bias, engine="grid", grid_days=1)
-    assert abs(par_spread_bp(isda) - par_spread_bp(grid)) < PAR_SPREAD_ENGINE_AGREEMENT_BP
+    assert abs(dirty_par_spread_bp(isda) - dirty_par_spread_bp(grid)) < PAR_SPREAD_ENGINE_AGREEMENT_BP
 
 
 # --- criterion 2: the credit triangle ----------------------------------------
@@ -134,7 +137,7 @@ def test_credit_triangle_in_the_continuous_limit(zero_rate_curve: DiscountCurve,
     assert abs(s_bp - 1e4 * TRIANGLE_HAZARD * (1.0 - TRIANGLE_RECOVERY)) < CREDIT_TRIANGLE_BP
 
 
-def test_act360_accrual_against_act365f_time_scales_the_par_spread(zero_rate_curve: DiscountCurve) -> None:
+def test_act360_accrual_against_act365f_time_scales_the_dirty_par_spread(zero_rate_curve: DiscountCurve) -> None:
     """The intended mixing (Part A.1): act/360 coupon fractions on act/365F
     curve time make every coupon 365/360 larger, so the par spread is exactly
     360/365 of the act/365F one."""
@@ -152,9 +155,9 @@ def test_act360_accrual_against_act365f_time_scales_the_par_spread(zero_rate_cur
 
 @pytest.mark.parametrize("half_day_bias", [True, False])
 def test_grid_error_halves_when_the_step_halves(discount: DiscountCurve, schedule_5y: Schedule, half_day_bias: bool) -> None:
-    s_isda = par_spread_bp(_legs(discount, "steep", schedule_5y, half_day_bias=half_day_bias))
-    s_1 = par_spread_bp(_legs(discount, "steep", schedule_5y, half_day_bias=half_day_bias, engine="grid", grid_days=1))
-    s_2 = par_spread_bp(_legs(discount, "steep", schedule_5y, half_day_bias=half_day_bias, engine="grid", grid_days=2))
+    s_isda = dirty_par_spread_bp(_legs(discount, "steep", schedule_5y, half_day_bias=half_day_bias))
+    s_1 = dirty_par_spread_bp(_legs(discount, "steep", schedule_5y, half_day_bias=half_day_bias, engine="grid", grid_days=1))
+    s_2 = dirty_par_spread_bp(_legs(discount, "steep", schedule_5y, half_day_bias=half_day_bias, engine="grid", grid_days=2))
     ratio = abs(s_2 - s_isda) / abs(s_1 - s_isda)
     lo, hi = GRID_CONVERGENCE_RATIO
     assert lo <= ratio <= hi
@@ -169,8 +172,8 @@ def test_half_day_bias_is_small_and_raises_the_annuity(discount: DiscountCurve, 
     assert on.annuity_accrual > off.annuity_accrual
     assert on.annuity_coupon == off.annuity_coupon
     assert on.protection == off.protection
-    assert abs(par_spread_bp(on) - par_spread_bp(off)) < HALF_DAY_BIAS_BP
-    assert par_spread_bp(on) < par_spread_bp(off)
+    assert abs(dirty_par_spread_bp(on) - dirty_par_spread_bp(off)) < HALF_DAY_BIAS_BP
+    assert dirty_par_spread_bp(on) < dirty_par_spread_bp(off)
 
 
 # --- criterion 5: signs and monotonicity -------------------------------------

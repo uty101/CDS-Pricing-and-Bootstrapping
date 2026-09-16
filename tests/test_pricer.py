@@ -2,10 +2,11 @@
 (BUILD_PLAN.md Section 5, criteria 1 to 7).
 
 The curves are the Section 4 test curves on the Section 2 discount curve.
-The par spread is PV_prot / A (docs/CONVENTIONS_RESOLVED.md item 21); the
-clean-value spread is checked alongside it because the plan's criteria 1
-and 2 (clean upfront zero at the par coupon) hold for that spread only.
-QuantLib is the oracle for the accrued rebate, imported in the test only.
+The par spread is the clean-value spread PV_prot / (A - accrued_fraction / D)
+(docs/CONVENTIONS_RESOLVED.md item 24), at which the clean upfront is zero;
+the dirty par spread PV_prot / A is checked alongside it as the coupon at
+which the dirty value is zero. QuantLib is the oracle for the accrued rebate
+and for fairSpread, imported in the test only.
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ from cds.legs import leg_values
 from cds.pricer import (
     accrued_days,
     cash_settle_date,
-    clean_par_spread_bp,
     implied_flat_hazard,
     price,
     quoted_spread_to_upfront,
@@ -60,7 +60,8 @@ ROUNDTRIP_COUPONS_BP = (100.0, 500.0)
 HAZARD_UP = 1.10
 
 # The 6M contract from 15 Sep 2026 pays two full coupons (182 days) for 96
-# days of protection, so its dirty par spread is near half the clean one.
+# days of protection, so its dirty par spread is near half the clean-value
+# par spread.
 DIRTY_6M_FRACTION = 0.6
 
 # Five of the 16 trade dates fall on a weekend; price() refuses them (item
@@ -99,36 +100,40 @@ def _trade(tenor: str = "5Y", coupon_bp: float = 100.0, side: str = "buy", recov
 # --- criteria 1 and 2: the par coupon ----------------------------------------
 
 
-def test_par_coupon_gives_zero_dirty_upfront_and_reprices_the_par_spread(discount: DiscountCurve) -> None:
-    """At c = s_par the dirty value is zero, so mtm is under $1 on $10m and
-    the clean upfront equals the accrued; the par spread is unchanged."""
+def test_par_coupon_gives_zero_clean_upfront_and_reprices_the_par_spread(discount: DiscountCurve) -> None:
+    """Criteria 1 and 2: at c = s_par (the clean-value spread, item 24) the
+    clean upfront is within 0.01 bp of zero, U_dirty + accrued is under $1 on
+    $10m (mtm is dirty, so the check is on the clean amount), and the par
+    spread reprices to 1e-9 bp."""
     state = _flat_state(discount)
     s_par = price(state, _trade()).par_spread_bp
     at_par = price(state, _trade(coupon_bp=s_par))
-    assert abs(at_par.mtm) < PAR_UPFRONT_USD
+    assert abs(at_par.clean_upfront_pct) < PAR_UPFRONT_BP / BP_PER_UNIT * PERCENT
+    assert abs(at_par.mtm + at_par.accrued) < PAR_UPFRONT_USD
     assert abs(at_par.par_spread_bp - s_par) < PAR_SPREAD_REPRICE_BP
-    assert abs(at_par.clean_upfront_pct - PERCENT * at_par.accrued / DEFAULT_NOTIONAL) < PRICER_IDENTITY_ABS_TOL
-    assert abs(at_par.pv_protection - at_par.pv_premium) < PRICER_IDENTITY_ABS_TOL
 
 
-def test_clean_par_coupon_gives_zero_clean_upfront(discount: DiscountCurve) -> None:
-    """The plan's criteria 1 and 2 as written: clean upfront within 0.01 bp of
-    zero and U_dirty + accrued under $1. They hold at the clean-value spread."""
+def test_dirty_par_coupon_gives_zero_dirty_upfront(discount: DiscountCurve) -> None:
+    """The companion identity: at c = PV_prot / A the dirty value is zero, so
+    mtm is under $1, the clean upfront equals the accrued and the two legs
+    are equal; the reported par spread is unchanged."""
     state = _flat_state(discount)
-    s_clean = clean_par_spread_bp(state, _trade())
-    at_clean_par = price(state, _trade(coupon_bp=s_clean))
-    assert abs(at_clean_par.clean_upfront_pct) < PAR_UPFRONT_BP / BP_PER_UNIT * PERCENT
-    assert abs(at_clean_par.mtm + at_clean_par.accrued) < PAR_UPFRONT_USD
-    assert abs(at_clean_par.par_spread_bp - price(state, _trade()).par_spread_bp) < PAR_SPREAD_REPRICE_BP
+    s_dirty = value(discount, state.survival, state.recovery, _trade(), AS_OF).dirty_par_spread_bp
+    at_dirty_par = price(state, _trade(coupon_bp=s_dirty))
+    assert abs(at_dirty_par.mtm) < PAR_UPFRONT_USD
+    assert abs(at_dirty_par.clean_upfront_pct - PERCENT * at_dirty_par.accrued / DEFAULT_NOTIONAL) < PRICER_IDENTITY_ABS_TOL
+    assert abs(at_dirty_par.pv_protection - at_dirty_par.pv_premium) < PRICER_IDENTITY_ABS_TOL
+    assert abs(at_dirty_par.par_spread_bp - price(state, _trade()).par_spread_bp) < PAR_SPREAD_REPRICE_BP
+    assert s_dirty < at_dirty_par.par_spread_bp  # the dirty annuity carries 86 rebated days
 
 
-def test_clean_par_spread_is_the_same_on_every_tenor_for_a_flat_hazard(discount: DiscountCurve) -> None:
-    """A flat hazard has one credit-triangle spread; the clean-value spread
-    sees it on every tenor, the dirty par spread does not (the 6M pays two
-    full coupons for 96 days of protection)."""
+def test_par_spread_is_the_same_on_every_tenor_for_a_flat_hazard(discount: DiscountCurve) -> None:
+    """A flat hazard has one credit-triangle spread; the clean-value par
+    spread sees it on every tenor, the dirty par spread does not (the 6M pays
+    two full coupons for 96 days of protection)."""
     state = _flat_state(discount)
-    clean = [clean_par_spread_bp(state, _trade(tenor)) for tenor in ("6M", "1Y", "5Y", "10Y")]
-    dirty = [price(state, _trade(tenor)).par_spread_bp for tenor in ("6M", "1Y", "5Y", "10Y")]
+    clean = [price(state, _trade(tenor)).par_spread_bp for tenor in ("6M", "1Y", "5Y", "10Y")]
+    dirty = [value(discount, state.survival, state.recovery, _trade(tenor), AS_OF).dirty_par_spread_bp for tenor in ("6M", "1Y", "5Y", "10Y")]
     assert max(clean) - min(clean) < CLEAN_SPREAD_TENOR_RANGE_BP
     assert dirty[0] < clean[0] * DIRTY_6M_FRACTION
     assert dirty == sorted(dirty)
@@ -357,11 +362,11 @@ def test_curve_time_is_act365f_from_as_of(discount: DiscountCurve) -> None:
 
 @pytest.mark.parametrize("tenor", ["6M", "1Y", "5Y", "10Y"])
 @pytest.mark.parametrize("name", list(CURVES))
-def test_clean_upfront_and_clean_spread_match_quantlib(discount: DiscountCurve, name: str, tenor: str) -> None:
+def test_clean_upfront_and_par_spread_match_quantlib(discount: DiscountCurve, name: str, tenor: str) -> None:
     """fairUpfront is the clean upfront at the cash settlement date (T+3,
-    WeekendsOnly), fairSpread the clean-value spread; both are QuantLib's
-    IsdaCdsEngine on the same curves, flags as in test_legs. The plan's par
-    spread (item 21) is not fairSpread and is not compared."""
+    WeekendsOnly), fairSpread the clean-value spread, which is our par spread
+    (item 24); both are QuantLib's IsdaCdsEngine on the same curves, flags as
+    in test_legs."""
     import QuantLib as ql
 
     def to_ql(d: date) -> ql.Date:
@@ -392,7 +397,7 @@ def test_clean_upfront_and_clean_spread_match_quantlib(discount: DiscountCurve, 
         )
     )
     assert abs(ours.clean_upfront_pct - PERCENT * cds.fairUpfront()) < QL_PRICER_ABS_TOL
-    assert abs(clean_par_spread_bp(state, trade) - BP_PER_UNIT * cds.fairSpread()) < QL_PRICER_ABS_TOL
+    assert abs(ours.par_spread_bp - BP_PER_UNIT * cds.fairSpread()) < QL_PRICER_ABS_TOL
     assert abs(ours.accrued - DEFAULT_NOTIONAL * cds.accrualRebate().amount()) < QL_ACCRUED_ABS_USD
     annuity_ql = -cds.couponLegNPV() / (trade.coupon_bp / BP_PER_UNIT)  # at the valuation date; ours is at settlement
     assert abs(ours.risky_annuity - annuity_ql / discount.df_on(ours.cash_settle_date)) < QL_PRICER_ABS_TOL

@@ -70,8 +70,8 @@ __all__ = [
     "Engine",
     "LegValues",
     "TAYLOR_THRESHOLD",
+    "dirty_par_spread_bp",
     "leg_values",
-    "par_spread_bp",
     "protection_start_date",
 ]
 
@@ -116,8 +116,14 @@ class LegValues:
         return self.annuity_coupon + self.annuity_accrual
 
 
-def par_spread_bp(values: LegValues) -> float:
-    """s_par = PV_prot / A (SPEC 6.4), in basis points."""
+def dirty_par_spread_bp(values: LegValues) -> float:
+    """The dirty par spread PV_prot / A (SPEC 6.4 read with the full first
+    coupon in A), in basis points: the coupon at which the dirty value of the
+    legs is zero. It is a property of the legs alone, so it is what the
+    engine-agreement tests compare. The par spread the library reports,
+    Valuation.par_spread_bp in cds.pricer, is the clean-value spread
+    (docs/CONVENTIONS_RESOLVED.md item 24), which nets the rebated accrued
+    out of A and needs the settlement factor."""
     return BP_PER_UNIT * values.pv_protection / values.annuity
 
 

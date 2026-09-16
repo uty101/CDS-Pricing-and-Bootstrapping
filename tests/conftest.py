@@ -91,15 +91,17 @@ HALF_DAY_BIAS_BP = 0.02
 # same merged grid, so the leg values differ by float noise only.
 QL_LEGS_ABS_TOL = 1e-12
 
-# Section 5: at the par coupon the dirty upfront is zero up to float noise in
-# the legs; the plan's bar is 0.01 bp of notional.
+# Section 5: at the par coupon (the clean-value spread, item 24) the clean
+# upfront is zero up to float noise in the legs; the plan's bar is 0.01 bp of
+# notional.
 PAR_UPFRONT_BP = 0.01
 
 # Section 5: the same identity in currency on $10m; the plan's "under $1".
 PAR_UPFRONT_USD = 1.0
 
-# Section 5: the par spread is a ratio of two leg values and repricing at
-# that coupon returns it to float precision; the plan's 1e-9 bp.
+# Section 5: the par spread is a ratio of leg values, the settlement factor
+# and the accrued, none of which depend on the coupon, so repricing at that
+# coupon returns it to float precision; the plan's 1e-9 bp.
 PAR_SPREAD_REPRICE_BP = 1e-9
 
 # Section 5: spread -> upfront -> spread is two Brent solves with xtol 1e-12

@@ -83,7 +83,7 @@ Sources used throughout:
 | Rule | Statement | Source |
 |---|---|---|
 | Inputs | Per pillar, either `par_spread_bp` or `upfront_pct` with a stated coupon, never mixed within one curve. Upfront quotes are converted to a conventional spread with the flat-hazard rule first (using the pillar's own maturity), then bootstrapped like spreads. The conventional spread is stored next to the upfront in the curve file and in Table 1. | [BigBang], [ISDA-SM] |
-| Method | Sequential Brent per pillar on λ_i ∈ [0, 5], holding earlier pillars fixed. Objective f(λ_i) = PV_prot(λ_1..λ_i) − s_i·A(λ_1..λ_i) for a contract maturing on pillar i, valued with the `isda` engine at the pillar's conventional spread and the curve's recovery. | [SPEC] 6.5, [O'Kane] 7.5 |
+| Method | Sequential Brent per pillar on λ_i ∈ [0, 5], holding earlier pillars fixed. Objective f(λ_i) = D·(PV_prot(λ_1..λ_i) − s_i·A(λ_1..λ_i)) + s_i·accrued_fraction, the clean value at coupon s_i, for a contract maturing on pillar i, valued with the `isda` engine at the pillar's conventional spread and the curve's recovery (item 24; the Section 6 text spells it out). | [SPEC] 6.5, [O'Kane] 7.5, [ISDA-SM] `isPriceClean = TRUE` |
 | Arbitrage detection | Before Brent, evaluate f(0). If the sign says the root would be negative (spread falls faster with maturity than any non-negative hazard allows), raise `BootstrapArbitrageError(pillar, spread_bp, f_at_zero)` and do not force a fit. The error's message names the standard fallbacks; `bootstrap(..., fallback="flat_from_shortest")` fits a single flat hazard to the shortest pillar, and `fallback="upfront"` prices each pillar off its own flat hazard (upfront-quoted pricing) without a joint curve. | [SPEC] 6.5 and 10 |
 
 ---
@@ -644,11 +644,16 @@ discounting, and the textbook model as a separate module for comparison.
 
 **Rules implemented.** SPEC 6.4 and Part A.3, resolved by Part B items 2, 3
 and 8. With A and PV_prot from Section 4 and D = 1/P(t_settle):
-- s_par = PV_prot / A (per unit notional; in bp × 10⁴)
 - dirty buyer value per unit notional, at settlement: U_dirty = D·(PV_prot − c·A)
 - accrued (per unit notional) = c·accrued_days/360, accrued_days from the
-  schedule (Part B item 2)
+  schedule (Part B item 2); accrued_fraction = accrued_days/360
 - clean_upfront_pct = 100·(U_dirty + accrued)
+- s_par = PV_prot / (A − accrued_fraction / D) (per unit notional; in bp
+  × 10⁴): the clean-value spread, the coupon at which clean_upfront_pct is
+  zero, QuantLib's `fairSpread` (`docs/CONVENTIONS_RESOLVED.md` item 24,
+  reversing item 21). The dirty quantity PV_prot / A, the coupon at which
+  U_dirty is zero, is `Valuation.dirty_par_spread_bp`, not a `PriceResult`
+  field.
 - mtm = side_sign·N·(U_dirty − inception_cash), with inception_cash = 0 for
   `quote=None`, = `value/100` for an `upfront_pct` quote, and 0 for a
   `par_spread_bp` quote (with the pricer raising unless `coupon_bp ==
@@ -670,10 +675,12 @@ s_par = λ(1 − R) exactly. It never imports `legs.py` or `schedule.py`.
 **Acceptance criteria.**
 1. For a flat-hazard survival curve built in the test (Section 6 is not
    built yet), `price` of a trade with `coupon_bp` equal to the curve's own
-   5Y par spread has `clean_upfront_pct` within 0.01 bp of zero and
-   `par_spread_bp` equal to the input to 1e-9.
+   5Y par spread (the clean-value spread, item 24) has `clean_upfront_pct`
+   within 0.01 bp of zero and `par_spread_bp` equal to the input to 1e-9.
 2. Upfront at the par coupon is zero: `U_dirty + accrued` is under $1 on
    $10m for that trade (mtm is dirty, so the check is on the clean amount).
+   The companion identity at the dirty par spread PV_prot / A: `mtm` under
+   $1 and `clean_upfront_pct` equal to the accrued in % of notional.
 3. Round trip: quoted spread 250 bp → upfront at coupon 100 → quoted spread
    returns 250 bp to 1e-6 bp; same at coupon 500 and for 45 bp and 1200 bp.
 4. Sign: raising every hazard by 10% raises the buyer's mtm and lowers the
@@ -715,14 +722,17 @@ discount: DiscountCurve, fallback: None | "flat_from_shortest" | "upfront")
 For pillar i: maturity = `standard_maturity(as_of, pillar)`; conventional
 spread s_i = the quote if `par_spread_bp`, else
 `upfront_to_quoted_spread` (Section 5) at the stated coupon; objective
-f(λ_i) = PV_prot(λ_1..λ_i) − s_i·A(λ_1..λ_i) via the `isda` engine on a
-contract from `as_of` to maturity i at recovery `quotes.recovery`. The
-sign test at zero: f(0) < 0 means that even with no default risk in the
-new interval the protection leg already falls short of the premium leg at
-s_i, so a positive λ_i is needed and Brent proceeds; f(0) ≥ 0 means the
-earlier pillars already deliver more protection than s_i pays for, the root
-would be at or below zero, and `BootstrapArbitrageError(pillar=i,
-spread_bp=s_i, f_at_zero=f(0))` is raised. Otherwise
+f(λ_i) = D·(PV_prot(λ_1..λ_i) − s_i·A(λ_1..λ_i)) + s_i·accrued_fraction,
+the clean value of the contract at coupon s_i (item 24: s_i is the
+clean-value spread, so the root is where `clean_upfront_pct` is zero),
+via the `isda` engine on a contract from `as_of` to maturity i at recovery
+`quotes.recovery`. The sign test at zero: f(0) < 0 means that even with no
+default risk in the new interval the protection leg already falls short of
+the premium leg at s_i, so a positive λ_i is needed and Brent proceeds;
+f(0) ≥ 0 means the earlier pillars already deliver more protection than
+s_i pays for, the root would be at or below zero, and
+`BootstrapArbitrageError(pillar=i, spread_bp=s_i, f_at_zero=f(0))` is
+raised. Otherwise
 `scipy.optimize.brentq` on [0, 5] with xtol 1e-12.
 
 The distressed curve file stores `upfront_pct` at coupon 500 obtained by
@@ -735,7 +745,9 @@ were derived that way in this section so Table 1 can show both.
 1. Each bootstrapped curve reprices every pillar's conventional spread to
    within 0.01 bp (`BOOTSTRAP_REPRICE_BP`): 8 rows per curve.
 2. Flat 100 bp at R = 0.40 (an in-test curve, all pillars 100) gives every
-   λ_i within 3% (`FLAT_HAZARD_REL_TOL`) of 1.67%.
+   λ_i within 3% (`FLAT_HAZARD_REL_TOL`) of 1.67%. This holds for the
+   clean-value spread of item 24 (1.680 to 1.681%) and not for the dirty
+   PV_prot / A (3.21% at 6M, review 05).
 3. The IG and HY curves fit with all λ_i > 0 and strictly increasing for HY.
 4. The distressed curve either (a) raises `BootstrapArbitrageError` naming
    the pillar and spread, or (b) fits, in which case `distressed_arb.json`

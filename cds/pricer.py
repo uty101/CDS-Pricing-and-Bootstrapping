@@ -7,11 +7,11 @@ annuity_accrual, PV_prot = pv_protection. With the coupon c = coupon_bp /
 10^4, the cash settlement date t_settle = as_of + 3 business days, and
 D = 1 / P(t_settle):
 
-    s_par           = 10^4 * PV_prot / A                          (SPEC 6.4)
     U_dirty         = D * (PV_prot - c * A)          buyer value, per unit notional, at settlement
     accrued         = c * accrued_days / 360         per unit notional, cash on the settlement date
     clean_upfront   = 100 * (U_dirty + accrued)      in % of notional, the quoted number
     mtm             = side_sign * N * (U_dirty - inception_cash)
+    s_par           = 10^4 * PV_prot / (A - accrued_fraction / D)     (SPEC 6.4, item 24)
 
 Every amount in PriceResult is stated at the cash settlement date
 (docs/CONVENTIONS_RESOLVED.md item 3). The buyer's cash on that date is the
@@ -28,21 +28,25 @@ quote); for an upfront_pct quote it is the quoted clean upfront less the
 accrued rebated at inception, value / 100 - c * accrued_days_0 / 360, since
 the quote is clean and the cash paid is dirty.
 
-The par spread is the dirty one, PV_prot / A (item 21). The clean-value
-spread, the s at which clean_upfront is zero (QuantLib's fairSpread, the
-ISDA converter's conventional spread), is also exposed, as
-clean_par_spread_bp:
-
-    s_clean = 10^4 * PV_prot / (A - accrued_fraction / D)
+The par spread is the clean-value spread (docs/CONVENTIONS_RESOLVED.md
+item 24): the coupon s at which clean_upfront is zero, i.e. at which the
+buyer pays nothing on the settlement date beyond the accrued the seller
+rebates. With accrued_fraction = accrued_days / 360, clean_upfront = 0 gives
+D * (PV_prot - s * A) + s * accrued_fraction = 0, hence the formula above.
+It is QuantLib's fairSpread and the spread the ISDA C bootstrap fits with
+isPriceClean = TRUE; on a flat hazard it is one number on every tenor. The
+dirty par spread PV_prot / A, the coupon at which U_dirty is zero, is kept
+as Valuation.dirty_par_spread_bp and is not in PriceResult.
 
 Flat-hazard conversions (Part A.3): quoted_spread_to_upfront finds the
-single hazard lambda_flat in [0, 5] at which the trade's par spread equals
-the quoted spread, with the trade's recovery, the given discount curve and
-the trade's own maturity, and returns the clean upfront at the trade's
-coupon. upfront_to_quoted_spread is the inverse: the lambda_flat at which
-the clean upfront equals the given one, and the par spread there. Both use
-scipy's brentq; the second is one Brent on lambda rather than a Brent on
-the spread around the first, which has the same root.
+single hazard lambda_flat in [0, 5] at which the trade's par spread (the
+clean-value spread) equals the quoted spread, with the trade's recovery,
+the given discount curve and the trade's own maturity, and returns the
+clean upfront at the trade's coupon. upfront_to_quoted_spread is the
+inverse: the lambda_flat at which the clean upfront equals the given one,
+and the par spread there. Both use scipy's brentq; the second is one Brent
+on lambda rather than a Brent on the spread around the first, which has the
+same root (item 26).
 """
 
 from __future__ import annotations
@@ -56,7 +60,7 @@ from cds.calendars import add_business_days, is_business_day
 from cds.conventions import ACT360_BASIS, CASH_SETTLE_BUSINESS_DAYS, DEFAULT_CALENDAR
 from cds.curves import RecoveryCurve, SurvivalCurve
 from cds.legs import BP_PER_UNIT, Engine, LegValues, leg_values
-from cds.legs import par_spread_bp as _legs_par_spread_bp
+from cds.legs import dirty_par_spread_bp as _legs_dirty_par_spread_bp
 from cds.schedule import Schedule, cds_schedule, year_fraction_act365f
 from cds.types import CDSTrade, DiscountCurve, MarketState, PriceResult
 from cds.types import RecoveryCurve as RecoveryCurveProtocol
@@ -67,7 +71,6 @@ __all__ = [
     "Valuation",
     "accrued_days",
     "cash_settle_date",
-    "clean_par_spread_bp",
     "implied_flat_hazard",
     "price",
     "quoted_spread_to_upfront",
@@ -126,14 +129,15 @@ class Valuation:
 
     @property
     def par_spread_bp(self) -> float:
-        """s_par = 10^4 * PV_prot / A, at the valuation date (item 21)."""
-        return _legs_par_spread_bp(self.legs)
+        """s_par = 10^4 * PV_prot / (A - accrued_fraction / D): the clean-value
+        spread, at which clean_upfront is zero (item 24). QuantLib's fairSpread."""
+        return BP_PER_UNIT * self.legs.pv_protection / (self.legs.annuity - self.accrued_fraction / self.d_settle)
 
     @property
-    def clean_par_spread_bp(self) -> float:
-        """The spread at which the clean upfront is zero: PV_prot / (A -
-        accrued_fraction / D). QuantLib's fairSpread; not the plan's par spread."""
-        return BP_PER_UNIT * self.legs.pv_protection / (self.legs.annuity - self.accrued_fraction / self.d_settle)
+    def dirty_par_spread_bp(self) -> float:
+        """10^4 * PV_prot / A: the coupon at which dirty_upfront is zero. Kept
+        for comparison; not the par spread the library reports."""
+        return _legs_dirty_par_spread_bp(self.legs)
 
     @property
     def dirty_upfront(self) -> float:
@@ -257,15 +261,6 @@ def price(
     )
 
 
-def clean_par_spread_bp(state: MarketState, trade: CDSTrade, **kwargs) -> float:
-    """The clean-value spread of the trade on the state (see the module
-    docstring); reported next to par_spread_bp, not in PriceResult."""
-    dates = {state.as_of, state.discount.as_of, state.survival.as_of, state.recovery.as_of}
-    if len(dates) != 1:
-        raise ValueError(f"MarketState.as_of and the curves' as_of disagree: {sorted(dates)}")
-    return value(state.discount, state.survival, state.recovery, trade, state.as_of, **kwargs).clean_par_spread_bp
-
-
 def _flat_valuation(discount: DiscountCurve, trade: CDSTrade, hazard: float, **kwargs) -> Valuation:
     """The trade on a single flat hazard, with its own recovery, valued on
     the discount curve's as_of."""
@@ -275,8 +270,9 @@ def _flat_valuation(discount: DiscountCurve, trade: CDSTrade, hazard: float, **k
 
 
 def implied_flat_hazard(discount: DiscountCurve, trade: CDSTrade, quoted_spread_bp: float, **kwargs) -> float:
-    """lambda_flat in HAZARD_BOUNDS at which the trade's par spread equals
-    quoted_spread_bp (Brent). A zero spread gives a zero hazard."""
+    """lambda_flat in HAZARD_BOUNDS at which the trade's par spread (the
+    clean-value spread, item 24) equals quoted_spread_bp (Brent). A zero
+    spread gives a zero hazard."""
     if quoted_spread_bp < 0.0:
         raise ValueError(f"quoted spread {quoted_spread_bp} bp is negative")
     lo, hi = HAZARD_BOUNDS
