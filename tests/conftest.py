@@ -31,6 +31,15 @@ QL_PAR_SPREAD_BP = 0.5
 # Section 7: a pillar hazard is a spread-like quantity; same bar as par spread.
 QL_HAZARD_BP = 0.5
 
+# Section 7: the risky annuity per unit spread; 0.01 is 1 bp of notional at
+# a 100 bp coupon, the same bar as the upfront.
+QL_ANNUITY_ABS_TOL = 0.01
+
+# Section 7: CS01 agrees to 1% of itself or $50, whichever is larger (the
+# plan's criterion 3); the two bootstraps place their nodes 1 to 3 days apart.
+QL_CS01_REL_TOL = 0.01
+QL_CS01_ABS_USD = 50.0
+
 # Section 8: sequential per-pillar re-bootstraps are not the joint one; the
 # gap is second order in a 1 bp bump.
 CS01_SUM_REL_TOL = 0.02

@@ -3,7 +3,8 @@ output. Each takes the bootstrap results, writes its files under outputs/
 and returns the DataFrame it wrote. scripts/make_outputs.py runs them; the
 README embeds the files by path and computes nothing.
 
-Section 6 owns Table 1 and Chart 1; later sections add their outputs here.
+Section 6 owns Table 1 and Chart 1, Section 7 Tables 2 and 5; later
+sections add their outputs here.
 
 Table 1, outputs/tables/table_1_hazard_curves.csv (+ .md), one row per
 (curve, pillar): the quote as committed, the conventional spread the
@@ -17,6 +18,21 @@ panels: Q(t) and lambda(t) on 0 to 10 years for the curves given. The
 hazard panel draws the exact step function (lambda_i on (t_{i-1}, t_i]);
 the survival panel draws Q(t) daily. chart_1_survival_hazard.csv holds the
 same two functions sampled on a monthly grid t = k / 12, k = 0..120.
+
+Table 2, outputs/tables/table_2_quantlib_validation.csv (+ .md), long
+format, one row per (curve, trade, metric) from cds.validation.quantlib_check:
+ours, QuantLib's, the difference in the stated unit, the tolerance and
+whether the row passes. The rows are computed by the validation module and
+handed in; this module only writes them.
+
+Table 5, outputs/tables/table_5_isda_vs_textbook.csv (+ .md): for 1Y, 5Y
+and 10Y on each curve, the ISDA-path clean upfront and par spread from the
+bootstrapped curve against the textbook model (cds.textbook: continuous
+premium and discounting, flat hazard, no schedule) fed the flat-hazard
+equivalent of the pillar's conventional spread (cds.pricer.implied_flat_hazard
+on the pillar contract) and the discount curve's continuously compounded
+act/365F zero rate to the maturity. diff_bp is in bp of notional,
+diff_par_bp in bp of spread, both ISDA minus textbook.
 """
 
 from __future__ import annotations
@@ -31,8 +47,10 @@ import pandas as pd
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402 - the backend must be chosen first
 
-from cds.bootstrap import BootstrapResult
+from cds import textbook
+from cds.bootstrap import BootstrapResult, market_state, pillar_trade
 from cds.conventions import ACT365F_BASIS
+from cds.pricer import implied_flat_hazard, price
 from cds.schedule import year_fraction_act365f
 
 __all__ = [
@@ -40,11 +58,17 @@ __all__ = [
     "CHARTS_DIR",
     "OUTPUT_DECIMALS",
     "TABLE_1_COLUMNS",
+    "TABLE_2_COLUMNS",
+    "TABLE_5_COLUMNS",
+    "TABLE_5_COUPONS_BP",
+    "TABLE_5_TENORS",
     "TABLES_DIR",
     "chart_1_survival_hazard",
     "markdown_table",
     "rounded",
     "table_1_hazard_curves",
+    "table_2_quantlib_validation",
+    "table_5_isda_vs_textbook",
     "write_table",
 ]
 
@@ -66,6 +90,24 @@ TABLE_1_COLUMNS = (
     "cum_default_prob",
 )
 CHART_1_COLUMNS = ("curve", "t_years", "hazard_pct", "survival_prob")
+TABLE_2_COLUMNS = ("curve", "trade", "metric", "ours", "quantlib", "diff", "unit", "tolerance", "pass")
+TABLE_5_COLUMNS = (
+    "curve",
+    "tenor",
+    "coupon_bp",
+    "isda_clean_upfront_pct",
+    "textbook_upfront_pct",
+    "diff_bp",
+    "isda_par_spread_bp",
+    "textbook_par_spread_bp",
+    "diff_par_bp",
+)
+
+# Table 5: the tenors compared and the coupon each curve is priced at (the
+# Section 7 trades' coupons: 100 bp on IG, 500 bp on HY and distressed).
+TABLE_5_TENORS = ("1Y", "5Y", "10Y")
+TABLE_5_COUPONS_BP = {"IG_flat": 100.0, "HY_steep": 500.0, "distressed_inverted": 500.0}
+BP_PER_UNIT = 1e4
 
 PERCENT = 100.0
 
@@ -91,6 +133,16 @@ MD_DECIMALS = {
     "survival_prob": 6,
     "cum_default_prob": 6,
     "t_years": 6,
+    "ours": 9,
+    "quantlib": 9,
+    "diff": 6,
+    "tolerance": 3,
+    "isda_clean_upfront_pct": 6,
+    "textbook_upfront_pct": 6,
+    "diff_bp": 4,
+    "isda_par_spread_bp": 6,
+    "textbook_par_spread_bp": 6,
+    "diff_par_bp": 4,
 }
 
 # Chart colours: three categorical series in a fixed order (curve order as
@@ -124,8 +176,12 @@ def markdown_table(df: pd.DataFrame, decimals: dict[str, int] | None = None) -> 
 
 def rounded(df: pd.DataFrame) -> pd.DataFrame:
     """The frame with every float column rounded to OUTPUT_DECIMALS places:
-    what every committed CSV holds (item 34)."""
-    return df.round(OUTPUT_DECIMALS)
+    what every committed CSV holds (item 34). A difference that rounds to
+    zero is written as 0.0, not -0.0."""
+    out = df.round(OUTPUT_DECIMALS)
+    floats = out.select_dtypes(include="float").columns
+    out[floats] = out[floats] + 0.0
+    return out
 
 
 def write_table(df: pd.DataFrame, stem: Path) -> None:
@@ -161,6 +217,73 @@ def table_1_hazard_curves(results: Sequence[BootstrapResult], out_dir: Path = TA
             )
     df = pd.DataFrame(rows, columns=list(TABLE_1_COLUMNS))
     write_table(df, out_dir / "table_1_hazard_curves")
+    return df
+
+
+def table_2_quantlib_validation(rows: Sequence, out_dir: Path = TABLES_DIR) -> pd.DataFrame:
+    """Table 2 from the validation rows (cds.validation.quantlib_check.Row),
+    columns TABLE_2_COLUMNS; Row.passed becomes the pass column."""
+    df = pd.DataFrame(
+        [
+            {
+                "curve": r.curve,
+                "trade": r.trade,
+                "metric": r.metric,
+                "ours": r.ours,
+                "quantlib": r.quantlib,
+                "diff": r.diff,
+                "unit": r.unit,
+                "tolerance": r.tolerance,
+                "pass": bool(r.passed),
+            }
+            for r in rows
+        ],
+        columns=list(TABLE_2_COLUMNS),
+    )
+    write_table(df, out_dir / "table_2_quantlib_validation")
+    return df
+
+
+def table_5_isda_vs_textbook(
+    results: Sequence[BootstrapResult],
+    discount,
+    coupons_bp: dict[str, float] | None = None,
+    tenors: Sequence[str] = TABLE_5_TENORS,
+    out_dir: Path = TABLES_DIR,
+) -> pd.DataFrame:
+    """Table 5: the ISDA path against the textbook model, columns
+    TABLE_5_COLUMNS (see the module docstring for the textbook inputs)."""
+    coupons_bp = TABLE_5_COUPONS_BP if coupons_bp is None else coupons_bp
+    rows = []
+    for r in results:
+        quotes = r.quotes
+        state = market_state(r, discount)
+        coupon_bp = coupons_bp[quotes.label]
+        for tenor in tenors:
+            i = quotes.pillars.index(tenor)
+            trade = pillar_trade(quotes, i, coupon_bp)
+            isda = price(state, trade)
+            s_i = r.conventional_spreads_bp[i]
+            hazard = implied_flat_hazard(discount, trade, s_i)
+            t_mat = year_fraction_act365f(quotes.as_of, trade.maturity)
+            rate = discount.zero_rate(t_mat)
+            tb_upfront = textbook.upfront_pct(hazard, rate, t_mat, quotes.recovery, coupon_bp)
+            tb_spread = textbook.par_spread_bp(hazard, quotes.recovery)
+            rows.append(
+                {
+                    "curve": quotes.label,
+                    "tenor": tenor,
+                    "coupon_bp": coupon_bp,
+                    "isda_clean_upfront_pct": isda.clean_upfront_pct,
+                    "textbook_upfront_pct": tb_upfront,
+                    "diff_bp": BP_PER_UNIT / PERCENT * (isda.clean_upfront_pct - tb_upfront),
+                    "isda_par_spread_bp": isda.par_spread_bp,
+                    "textbook_par_spread_bp": tb_spread,
+                    "diff_par_bp": isda.par_spread_bp - tb_spread,
+                }
+            )
+    df = pd.DataFrame(rows, columns=list(TABLE_5_COLUMNS))
+    write_table(df, out_dir / "table_5_isda_vs_textbook")
     return df
 
 

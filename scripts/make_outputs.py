@@ -11,7 +11,9 @@ and hands the results to the generators in cds.report. The valuation date
 is the rates file's as_of; a curve file dated otherwise is an error.
 
 Table 1 lists every curve file; Chart 1 draws the three named curves (the
-arbitrage curve has no joint hazard curve to draw).
+arbitrage curve has no joint hazard curve to draw). Table 2 (the QuantLib
+comparison, Section 7) and Table 5 (ISDA path against the textbook model)
+cover the three named curves.
 """
 
 from __future__ import annotations
@@ -54,9 +56,23 @@ def make_chart_1(results: dict[str, BootstrapResult]) -> None:
     print(f"chart_1_survival_hazard: {len(df)} rows -> {report.CHARTS_DIR}")
 
 
+def make_table_2(results: dict[str, BootstrapResult]) -> None:
+    from cds.validation.quantlib_check import validation_rows  # QuantLib, imported only here
+
+    df = report.table_2_quantlib_validation(validation_rows(results, discount_curve_from_file(RATES_FILE)))
+    print(f"table_2_quantlib_validation: {len(df)} rows, {int(df['pass'].sum())} pass -> {report.TABLES_DIR}")
+
+
+def make_table_5(results: dict[str, BootstrapResult]) -> None:
+    df = report.table_5_isda_vs_textbook([results[k] for k in CHART_CURVES], discount_curve_from_file(RATES_FILE))
+    print(f"table_5_isda_vs_textbook: {len(df)} rows -> {report.TABLES_DIR}")
+
+
 OUTPUTS = {
     "table_1": make_table_1,
     "chart_1": make_chart_1,
+    "table_2": make_table_2,
+    "table_5": make_table_5,
 }
 
 
