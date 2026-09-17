@@ -1,0 +1,39 @@
+{
+ "label": "distressed_arb",
+ "as_of": "2026-09-15",
+ "recovery": 0.2,
+ "quote_kind": "upfront_pct",
+ "coupon_bp": 500.0,
+ "pillars": [
+  "6M",
+  "1Y",
+  "2Y",
+  "3Y",
+  "4Y",
+  "5Y",
+  "7Y",
+  "10Y"
+ ],
+ "quotes": [
+  13.182067789555067,
+  11.601336706651008,
+  18.410749267772783,
+  20.558945589995208,
+  22.141928122319452,
+  21.86933183746206,
+  21.868744539313067,
+  22.03498119160103
+ ],
+ "conventional_spread_bp": [
+  6000.0,
+  2200.0,
+  1800.0,
+  1500.0,
+  1350.0,
+  1200.0,
+  1050.0,
+  950.0
+ ],
+ "source": "illustrative",
+ "note": "The distressed_inverted curve with the 6M pillar raised from 2500 to 6000 bp (7 steps of 500 bp), the first level at which the sequential bootstrap needs a negative hazard (at the 1Y pillar; BUILD_PLAN.md Part B item 6). Used only for the arbitrage-detection test and the fallback demonstration. Quoted and derived exactly as distressed_inverted.json. Illustrative levels chosen in Section 0 (docs/DATA_NOTE.md); not an observation of any name on any date. Pillar dates are the standard maturities from as_of (the 6M pillar is 96 days out, docs/CONVENTIONS_RESOLVED.md item 18)."
+}

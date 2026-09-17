@@ -132,3 +132,13 @@ CLEAN_SPREAD_TENOR_RANGE_BP = 0.1
 # through the same settlement discounting and accrual rebate; the largest
 # gap seen is 3e-10 bp (inverted 6M), from the order of the divisions.
 QL_PRICER_ABS_TOL = 1e-9
+
+# Section 6: on a flat curve the flat-hazard conversion is exact, so the 5Y
+# upfront from the bootstrapped curve and from the single-hazard conversion
+# of the 5Y quote agree to solver precision; the plan's 0.01 bp of notional.
+UPFRONT_CURVE_VS_FLAT_BP = 0.01
+
+# Section 6: on the steep HY curve the two 5Y upfronts differ by more than
+# this, in bp of notional; the plan's "more than 1 bp", the reason both are
+# reported.
+UPFRONT_CURVE_VS_FLAT_HY_MIN_BP = 1.0

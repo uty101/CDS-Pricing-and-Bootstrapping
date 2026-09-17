@@ -1,0 +1,30 @@
+{
+ "label": "HY_steep",
+ "as_of": "2026-09-15",
+ "recovery": 0.25,
+ "quote_kind": "par_spread_bp",
+ "coupon_bp": null,
+ "pillars": [
+  "6M",
+  "1Y",
+  "2Y",
+  "3Y",
+  "4Y",
+  "5Y",
+  "7Y",
+  "10Y"
+ ],
+ "quotes": [
+  150.0,
+  200.0,
+  300.0,
+  380.0,
+  440.0,
+  500.0,
+  560.0,
+  600.0
+ ],
+ "conventional_spread_bp": null,
+ "source": "illustrative",
+ "note": "High-yield shape, par spreads in bp, 25% recovery. Illustrative levels chosen in Section 0 (docs/DATA_NOTE.md); not an observation of any name on any date. Pillar dates are the standard maturities from as_of (the 6M pillar is 96 days out, docs/CONVENTIONS_RESOLVED.md item 18)."
+}

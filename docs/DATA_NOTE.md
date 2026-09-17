@@ -34,6 +34,30 @@ with a steeper front end is committed for the arbitrage-detection test
 
 All curves share one valuation date: the date of the rates snapshot below.
 
+Section 6 wrote the files (`scripts/make_curves.py`, committed; `data/curves/README.md`
+lists them):
+
+- Valuation date **15 September 2026**, the rates snapshot's `as_of`.
+  Pillar dates are the standard maturities from that date: 20 Dec 2026 (6M,
+  96 days out, `docs/CONVENTIONS_RESOLVED.md` item 18), 20 Jun 2027, 20 Jun
+  2028, 20 Jun 2029, 20 Jun 2030, 20 Jun 2031, 20 Jun 2033, 20 Jun 2036.
+- `IG_flat.json` and `HY_steep.json`: the par spreads above, as given.
+- `distressed_inverted.json`: clean upfronts in % of notional at a 500 bp
+  coupon, `cds.pricer.quoted_spread_to_upfront` of the spreads above on
+  `data/rates/sofr_ois_2026-09-15.json` at 20% recovery, one flat hazard per
+  pillar on the pillar's own maturity, stored at full precision: 5.069354,
+  11.601337, 18.410749, 20.558946, 22.141928, 21.869332, 21.868745,
+  22.034981. The spreads are in `conventional_spread_bp`.
+- The distressed levels bootstrap with every hazard positive (31.5, 25.5,
+  17.9, 10.0, 9.7, 4.7, 6.1, 6.7% a year), so `distressed_arb.json` is
+  committed: the distressed curve with the 6M pillar raised in 500 bp steps
+  until the sequential bootstrap needs a negative hazard, which is at 6000 bp
+  (seven steps), failing at the 1Y pillar. Quoted and derived exactly as
+  `distressed_inverted.json`; used only for the arbitrage test and the
+  fallback demonstration.
+- Nothing in these files is observed. The shapes are the three the spec
+  names (section 8, Table 1); the levels were chosen in Section 0.
+
 Recovery assumptions are market convention, not data: 40% senior unsecured,
 20% subordinated, 25% HY index (spec section 4). Realised recovery is
 unobservable in advance; a 40% assumption on a name trading at 10 points

@@ -1,0 +1,39 @@
+{
+ "label": "distressed_inverted",
+ "as_of": "2026-09-15",
+ "recovery": 0.2,
+ "quote_kind": "upfront_pct",
+ "coupon_bp": 500.0,
+ "pillars": [
+  "6M",
+  "1Y",
+  "2Y",
+  "3Y",
+  "4Y",
+  "5Y",
+  "7Y",
+  "10Y"
+ ],
+ "quotes": [
+  5.069353685400998,
+  11.601336706651008,
+  18.410749267772783,
+  20.558945589995208,
+  22.141928122319452,
+  21.86933183746206,
+  21.868744539313067,
+  22.03498119160103
+ ],
+ "conventional_spread_bp": [
+  2500.0,
+  2200.0,
+  1800.0,
+  1500.0,
+  1350.0,
+  1200.0,
+  1050.0,
+  950.0
+ ],
+ "source": "illustrative",
+ "note": "Distressed inverted shape, 20% recovery, quoted as clean upfront in % of notional at a 500 bp coupon. The upfronts were derived in Section 6 from the indicative spreads in conventional_spread_bp with cds.pricer.quoted_spread_to_upfront (one flat hazard per pillar, on the pillar's own maturity) on sofr_ois_2026-09-15.json, so Table 1 can show both. Illustrative levels chosen in Section 0 (docs/DATA_NOTE.md); not an observation of any name on any date. Pillar dates are the standard maturities from as_of (the 6M pillar is 96 days out, docs/CONVENTIONS_RESOLVED.md item 18)."
+}

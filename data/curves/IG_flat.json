@@ -1,0 +1,30 @@
+{
+ "label": "IG_flat",
+ "as_of": "2026-09-15",
+ "recovery": 0.4,
+ "quote_kind": "par_spread_bp",
+ "coupon_bp": null,
+ "pillars": [
+  "6M",
+  "1Y",
+  "2Y",
+  "3Y",
+  "4Y",
+  "5Y",
+  "7Y",
+  "10Y"
+ ],
+ "quotes": [
+  45.0,
+  50.0,
+  60.0,
+  70.0,
+  80.0,
+  90.0,
+  105.0,
+  120.0
+ ],
+ "conventional_spread_bp": null,
+ "source": "illustrative",
+ "note": "Investment-grade shape, par spreads in bp, 40% senior unsecured recovery. Illustrative levels chosen in Section 0 (docs/DATA_NOTE.md); not an observation of any name on any date. Pillar dates are the standard maturities from as_of (the 6M pillar is 96 days out, docs/CONVENTIONS_RESOLVED.md item 18)."
+}

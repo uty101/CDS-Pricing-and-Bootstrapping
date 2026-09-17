@@ -1,0 +1,78 @@
+"""Regenerate the committed outputs (BUILD_PLAN.md Part D.3).
+
+    uv run python scripts/make_outputs.py                 # everything
+    uv run python scripts/make_outputs.py --only table_1  # one output
+    uv run python scripts/make_outputs.py --list
+
+Reads the discount curve from the rates snapshot and every curve file in
+data/curves/, bootstraps each (with the "upfront" fallback, so a curve that
+needs a negative hazard is still tabulated, its method column saying so),
+and hands the results to the generators in cds.report. The valuation date
+is the rates file's as_of; a curve file dated otherwise is an error.
+
+Table 1 lists every curve file; Chart 1 draws the three named curves (the
+arbitrage curve has no joint hazard curve to draw).
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from cds import report
+from cds.bootstrap import BootstrapResult, bootstrap, market_curve_quotes_from_file
+from cds.curves import discount_curve_from_file
+
+ROOT = Path(__file__).resolve().parent.parent
+RATES_FILE = ROOT / "data" / "rates" / "sofr_ois_2026-09-15.json"
+CURVES_DIR = ROOT / "data" / "curves"
+
+# Curve files in the order Table 1 lists them; Chart 1 draws the first three.
+CURVE_FILES = ("IG_flat", "HY_steep", "distressed_inverted", "distressed_arb")
+CHART_CURVES = CURVE_FILES[:3]
+
+
+def load_results() -> dict[str, BootstrapResult]:
+    discount = discount_curve_from_file(RATES_FILE)
+    results = {}
+    for label in CURVE_FILES:
+        quotes = market_curve_quotes_from_file(CURVES_DIR / f"{label}.json")
+        if quotes.as_of != discount.as_of:
+            raise ValueError(f"{label}.json is dated {quotes.as_of}; the rates snapshot is {discount.as_of}")
+        results[label] = bootstrap(quotes, discount, fallback="upfront")
+    return results
+
+
+def make_table_1(results: dict[str, BootstrapResult]) -> None:
+    df = report.table_1_hazard_curves([results[k] for k in CURVE_FILES])
+    print(f"table_1_hazard_curves: {len(df)} rows -> {report.TABLES_DIR}")
+
+
+def make_chart_1(results: dict[str, BootstrapResult]) -> None:
+    df = report.chart_1_survival_hazard([results[k] for k in CHART_CURVES])
+    print(f"chart_1_survival_hazard: {len(df)} rows -> {report.CHARTS_DIR}")
+
+
+OUTPUTS = {
+    "table_1": make_table_1,
+    "chart_1": make_chart_1,
+}
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--only", action="append", choices=sorted(OUTPUTS), help="generate this output only (repeatable)")
+    ap.add_argument("--list", action="store_true", help="list the outputs and exit")
+    args = ap.parse_args(argv)
+    if args.list:
+        print("\n".join(OUTPUTS))
+        return 0
+    results = load_results()
+    for name in args.only or list(OUTPUTS):
+        OUTPUTS[name](results)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
