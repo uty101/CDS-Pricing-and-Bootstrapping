@@ -178,6 +178,7 @@ def test_table_2_is_current_and_every_row_has_pass(rows: list[qc.Row], tmp_path:
     assert fresh["pass"].dtype == bool and fresh["pass"].notna().all()
     committed = report.TABLES_DIR / "table_2_quantlib_validation.csv"
     assert_output_current(tmp_path / "table_2_quantlib_validation.csv", committed)
+    assert (tmp_path / "table_2_quantlib_validation.md").read_text(encoding="utf-8") == committed.with_suffix(".md").read_text(encoding="utf-8")
     table = pd.read_csv(committed)
     assert set(table["metric"]) >= {"clean_upfront_pct", "par_spread_bp", "cs01_usd", "pv_protection", "risky_annuity"}
     assert all(m.startswith("hazard_pct_") for m in table["metric"] if m not in {"clean_upfront_pct", "par_spread_bp", "cs01_usd", "pv_protection", "risky_annuity"})
@@ -191,6 +192,7 @@ def test_table_5_is_current_and_the_textbook_spread_is_the_triangle(results: dic
     assert len(fresh) == len(NAMED_CURVES) * len(report.TABLE_5_TENORS)
     committed = report.TABLES_DIR / "table_5_isda_vs_textbook.csv"
     assert_output_current(tmp_path / "table_5_isda_vs_textbook.csv", committed)
+    assert (tmp_path / "table_5_isda_vs_textbook.md").read_text(encoding="utf-8") == committed.with_suffix(".md").read_text(encoding="utf-8")
     for row in fresh.itertuples(index=False):
         r = results[row.curve]
         i = PILLARS.index(row.tenor)
