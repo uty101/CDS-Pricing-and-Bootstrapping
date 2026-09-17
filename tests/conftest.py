@@ -152,17 +152,20 @@ UPFRONT_CURVE_VS_FLAT_BP = 0.01
 # reported.
 UPFRONT_CURVE_VS_FLAT_HY_MIN_BP = 1.0
 
-# Section 6 (docs/CONVENTIONS_RESOLVED.md item 34): a committed output is
-# compared with its regeneration numerically, every float column to this
-# absolute tolerance and every text column exactly; the files hold 10
-# decimal places, so 1e-9 is a full digit of slack over the rounding.
+# Section 6 (docs/CONVENTIONS_RESOLVED.md items 34 and 38): a committed
+# output is compared with its regeneration numerically, every float within
+# max(OUTPUT_ABS_TOL, OUTPUT_ABS_TOL * |committed value|) and every text
+# column exactly. The files hold 10 decimal places, so 1e-9 absolute is a
+# full digit of slack over the rounding on a number of order 1, and 1e-9
+# relative is the same slack on a number in currency on $10m.
 OUTPUT_ABS_TOL = 1e-9
 
 
 def assert_output_current(fresh_csv, committed_csv) -> None:
     """The two CSVs hold the same table: same columns in the same order, same
-    row count, text columns equal, float columns within OUTPUT_ABS_TOL
-    (item 34). Imported by every test that checks an output is current."""
+    row count, text columns equal, every float within
+    max(OUTPUT_ABS_TOL, OUTPUT_ABS_TOL * |committed value|) (items 34 and
+    38). Imported by every test that checks an output is current."""
     import pandas as pd
 
     fresh, committed = pd.read_csv(fresh_csv), pd.read_csv(committed_csv)
@@ -173,6 +176,8 @@ def assert_output_current(fresh_csv, committed_csv) -> None:
         if pd.api.types.is_float_dtype(a) or pd.api.types.is_float_dtype(b):
             both_nan = a.isna() & b.isna()
             assert both_nan.equals(a.isna()) and both_nan.equals(b.isna()), col
-            assert (a[~both_nan] - b[~both_nan]).abs().max() <= OUTPUT_ABS_TOL, (col, (a - b).abs().max())
+            gap = (a[~both_nan] - b[~both_nan]).abs()
+            allowed = (OUTPUT_ABS_TOL * b[~both_nan].abs()).clip(lower=OUTPUT_ABS_TOL)
+            assert (gap <= allowed).all(), (col, float((gap - allowed).max()))
         else:
             assert a.equals(b), col
