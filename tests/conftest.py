@@ -142,3 +142,28 @@ UPFRONT_CURVE_VS_FLAT_BP = 0.01
 # this, in bp of notional; the plan's "more than 1 bp", the reason both are
 # reported.
 UPFRONT_CURVE_VS_FLAT_HY_MIN_BP = 1.0
+
+# Section 6 (docs/CONVENTIONS_RESOLVED.md item 34): a committed output is
+# compared with its regeneration numerically, every float column to this
+# absolute tolerance and every text column exactly; the files hold 10
+# decimal places, so 1e-9 is a full digit of slack over the rounding.
+OUTPUT_ABS_TOL = 1e-9
+
+
+def assert_output_current(fresh_csv, committed_csv) -> None:
+    """The two CSVs hold the same table: same columns in the same order, same
+    row count, text columns equal, float columns within OUTPUT_ABS_TOL
+    (item 34). Imported by every test that checks an output is current."""
+    import pandas as pd
+
+    fresh, committed = pd.read_csv(fresh_csv), pd.read_csv(committed_csv)
+    assert list(fresh.columns) == list(committed.columns), (list(fresh.columns), list(committed.columns))
+    assert len(fresh) == len(committed), (len(fresh), len(committed))
+    for col in fresh.columns:
+        a, b = fresh[col], committed[col]
+        if pd.api.types.is_float_dtype(a) or pd.api.types.is_float_dtype(b):
+            both_nan = a.isna() & b.isna()
+            assert both_nan.equals(a.isna()) and both_nan.equals(b.isna()), col
+            assert (a[~both_nan] - b[~both_nan]).abs().max() <= OUTPUT_ABS_TOL, (col, (a - b).abs().max())
+        else:
+            assert a.equals(b), col

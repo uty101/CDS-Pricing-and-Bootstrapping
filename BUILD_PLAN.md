@@ -748,7 +748,9 @@ were derived that way in this section so Table 1 can show both.
    λ_i within 3% (`FLAT_HAZARD_REL_TOL`) of 1.67%. This holds for the
    clean-value spread of item 24 (1.680 to 1.681%) and not for the dirty
    PV_prot / A (3.21% at 6M, review 05).
-3. The IG and HY curves fit with all λ_i > 0 and strictly increasing for HY.
+3. The IG and HY curves fit with every λ_i > 0; HY strictly increasing
+   through 5Y; the 7Y and 10Y forward hazards sit below the 5Y one and
+   the test pins them (`docs/CONVENTIONS_RESOLVED.md` item 30).
 4. The distressed curve either (a) raises `BootstrapArbitrageError` naming
    the pillar and spread, or (b) fits, in which case `distressed_arb.json`
    raises; the test pins the pillar as a constant with the f(0) rows in the

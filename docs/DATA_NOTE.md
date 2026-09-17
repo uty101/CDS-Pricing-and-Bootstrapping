@@ -42,6 +42,11 @@ lists them):
   96 days out, `docs/CONVENTIONS_RESOLVED.md` item 18), 20 Jun 2027, 20 Jun
   2028, 20 Jun 2029, 20 Jun 2030, 20 Jun 2031, 20 Jun 2033, 20 Jun 2036.
 - `IG_flat.json` and `HY_steep.json`: the par spreads above, as given.
+  HY_steep's bootstrapped forward hazards rise from 2.0% at 6M to 10.9%
+  at 5Y and then sit slightly lower at 7Y and 10Y (10.6%, 10.6%): the
+  long-end dip is what a spread curve that flattens from 500 to 560 to
+  600 bp implies, not a fitting artefact (`docs/CONVENTIONS_RESOLVED.md`
+  item 30).
 - `distressed_inverted.json`: clean upfronts in % of notional at a 500 bp
   coupon, `cds.pricer.quoted_spread_to_upfront` of the spreads above on
   `data/rates/sofr_ois_2026-09-15.json` at 20% recovery, one flat hazard per

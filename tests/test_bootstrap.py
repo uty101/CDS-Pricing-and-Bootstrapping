@@ -43,6 +43,7 @@ from tests.conftest import (
     PRICER_IDENTITY_ABS_TOL,
     UPFRONT_CURVE_VS_FLAT_BP,
     UPFRONT_CURVE_VS_FLAT_HY_MIN_BP,
+    assert_output_current,
 )
 from tests.test_legs import RATES_FILE
 
@@ -67,11 +68,10 @@ ARB_PILLAR_INDEX = 1
 ARB_6M_SPREAD_BP = 6000.0
 ARB_1Y_SPREAD_BP = 2200.0
 
-# Criterion 3: the HY curve's hazards rise strictly through this many
-# pillars (6M to 5Y) and then dip at 7Y and 10Y on the specified levels;
-# the plan's "strictly increasing for HY" is the bar not met, reported in
-# review 06 with the rows, and the dip is pinned here until the reviewer
-# decides whether the long-end levels change.
+# Criterion 3 (docs/CONVENTIONS_RESOLVED.md item 30): the HY curve's hazards
+# rise strictly through this many pillars (6M to 5Y); the 7Y and 10Y forward
+# hazards sit below the 5Y one, which is what a spread curve that flattens
+# from 500 to 560 to 600 bp implies, and the test pins them.
 HY_STRICTLY_INCREASING_THROUGH = 6
 
 
@@ -150,8 +150,8 @@ def test_ig_and_hy_hazards_are_positive_and_hy_rises_through_5y(results: dict) -
     front = hy[:HY_STRICTLY_INCREASING_THROUGH]
     assert all(a < b for a, b in zip(front, front[1:]))
     assert all(a < b for a, b in zip(ig, ig[1:]))  # IG happens to rise on every pillar too
-    # The bar not met (review 06, Against the plan): the 7Y and 10Y hazards sit
-    # below the 5Y one on the specified 500 / 560 / 600 levels.
+    # Item 30: the 7Y and 10Y forward hazards sit below the 5Y one on the
+    # 500 / 560 / 600 long end; the dip is pinned so it cannot change silently.
     assert hy[6] < hy[5] and hy[7] < hy[6]
 
 
@@ -334,7 +334,9 @@ def test_table_1_is_current_and_has_the_fixed_columns(discount: DiscountCurve, c
     assert tuple(fresh.columns) == report.TABLE_1_COLUMNS
     assert len(fresh) == len(CURVE_FILES) * len(PILLARS)
     committed = report.TABLES_DIR / "table_1_hazard_curves.csv"
-    assert (tmp_path / "table_1_hazard_curves.csv").read_text(encoding="utf-8") == committed.read_text(encoding="utf-8")
+    assert_output_current(tmp_path / "table_1_hazard_curves.csv", committed)
+    # The Markdown is rendered from the rounded frame at fewer decimals, so
+    # the two renderings agree as text once the CSVs agree numerically.
     assert (tmp_path / "table_1_hazard_curves.md").read_text(encoding="utf-8") == committed.with_suffix(".md").read_text(encoding="utf-8")
     table = pd.read_csv(committed)
     assert set(table["method"]) == {"bootstrap", "upfront"}
@@ -347,7 +349,7 @@ def test_chart_1_is_current_and_1600_by_900(discount: DiscountCurve, results: di
     assert tuple(fresh.columns) == report.CHART_1_COLUMNS
     assert len(fresh) == len(NAMED_CURVES) * (10 * 12 + 1)
     committed = report.CHARTS_DIR / "chart_1_survival_hazard.csv"
-    assert (tmp_path / "chart_1_survival_hazard.csv").read_text(encoding="utf-8") == committed.read_text(encoding="utf-8")
+    assert_output_current(tmp_path / "chart_1_survival_hazard.csv", committed)
     image = matplotlib.image.imread(report.CHARTS_DIR / "chart_1_survival_hazard.png")
     assert image.shape[:2] == (900, 1600)
     ig = fresh[fresh["curve"] == "IG_flat"]

@@ -38,10 +38,12 @@ from cds.schedule import year_fraction_act365f
 __all__ = [
     "CHART_1_COLUMNS",
     "CHARTS_DIR",
+    "OUTPUT_DECIMALS",
     "TABLE_1_COLUMNS",
     "TABLES_DIR",
     "chart_1_survival_hazard",
     "markdown_table",
+    "rounded",
     "table_1_hazard_curves",
     "write_table",
 ]
@@ -73,8 +75,14 @@ CHART_DPI = 100
 CHART_YEARS = 10.0
 MONTHS_PER_YEAR = 12
 
-# Decimal places per column in the Markdown rendering; the CSV keeps full
-# precision.
+# Every float column of a committed output is rounded to this many decimal
+# places when written (docs/CONVENTIONS_RESOLVED.md item 34): byte-identical
+# floats are not portable across numpy and pandas builds, and 1e-10 is far
+# below every tolerance in the plan. Tests compare a regeneration with the
+# committed file numerically, never as text.
+OUTPUT_DECIMALS = 10
+
+# Decimal places per column in the Markdown rendering.
 MD_DECIMALS = {
     "quote": 6,
     "coupon_bp": 0,
@@ -114,9 +122,17 @@ def markdown_table(df: pd.DataFrame, decimals: dict[str, int] | None = None) -> 
     return "\n".join([header, rule, *rows]) + "\n"
 
 
+def rounded(df: pd.DataFrame) -> pd.DataFrame:
+    """The frame with every float column rounded to OUTPUT_DECIMALS places:
+    what every committed CSV holds (item 34)."""
+    return df.round(OUTPUT_DECIMALS)
+
+
 def write_table(df: pd.DataFrame, stem: Path) -> None:
-    """stem.csv with a header row and stem.md rendered from the same frame."""
+    """stem.csv with a header row and stem.md rendered from the same frame,
+    both from the rounded frame."""
     stem.parent.mkdir(parents=True, exist_ok=True)
+    df = rounded(df)
     df.to_csv(stem.with_suffix(".csv"), index=False, lineterminator="\n")
     stem.with_suffix(".md").write_text(markdown_table(df), encoding="utf-8", newline="\n")
 
@@ -187,7 +203,7 @@ def chart_1_survival_hazard(results: Sequence[BootstrapResult], out_dir: Path = 
     monthly-grid data written next to it. Returns the data frame."""
     df = _monthly_grid(results)
     out_dir.mkdir(parents=True, exist_ok=True)
-    df.to_csv(out_dir / "chart_1_survival_hazard.csv", index=False, lineterminator="\n")
+    rounded(df).to_csv(out_dir / "chart_1_survival_hazard.csv", index=False, lineterminator="\n")
 
     fig, (ax_q, ax_h) = plt.subplots(1, 2, figsize=(CHART_SIZE_PX[0] / CHART_DPI, CHART_SIZE_PX[1] / CHART_DPI), dpi=CHART_DPI)
     fig.patch.set_facecolor(SURFACE)
