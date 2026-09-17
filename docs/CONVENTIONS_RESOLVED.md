@@ -54,3 +54,11 @@ Section 9, acceptance criterion 2 had the sign of spread convexity backwards. Th
 27. `price(state, trade, *, calendar, engine, half_day_bias)` keyword arguments (Against the plan 4); no calendar field on `CDSTrade`. Accepted.
 28. `price` raises when `trade.recovery` differs from `state.recovery.R(0)` (Against the plan 5). Accepted; Section 8's rec01 replaces both.
 29. Seasoned `accrued_days` counts to as_of + 1 (Against the plan 6). Accepted; Section 8 computes JTD's accrued to the valuation date from the schedule.
+
+## Resolved at the start of Section 7 (questions from review 06)
+
+30. HY_steep levels (review 06, Against the plan 1): kept as committed (150 … 500, 560, 600). Section 6 criterion 3 is rewritten to "every λ_i > 0; HY strictly increasing through 5Y; the 7Y and 10Y forward hazards sit below the 5Y one and the test pins them". docs/DATA_NOTE.md states next to HY_steep that the long-end dip is what a flattening spread curve implies, not a fitting artefact.
+31. Fallbacks apply only when the sequential fit raises; method records what ran (Against the plan 2). Accepted.
+32. Table 1 shows distressed_arb under the upfront fallback only (Against the plan 3). Accepted.
+33. BootstrapResult fields, market_state, pillar_trade, the legs.py rename, scripts/make_curves.py, chart drawn from the exact step, report generators taking BootstrapResults, curve files carrying as_of, full-precision upfronts (Against the plan 4 to 12). All accepted.
+34. Committed outputs are rounded to 10 decimal places when written (cds/report.py write_table and the chart CSV). Tests that check an output is current compare it to a regeneration numerically, with absolute tolerance 1e-9 on every numeric column and exact match on text columns, never as raw file text. Reason: byte-identical floats are not portable across numpy and pandas builds; the two "is current" tests fail on a machine with numpy 2.4.4.
