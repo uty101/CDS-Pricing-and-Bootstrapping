@@ -60,6 +60,44 @@ THETA_FLAT_USD = 100.0
 # $1,000.
 THETA_STEEP_USD = 1000.0
 
+# Section 8: central CS01 against one-sided, per pillar on IG (criterion
+# 6); the gap is the curvature over 1 bp. The absolute floor covers pillars
+# beyond the trade's maturity, whose CS01 is zero on both sides.
+CS01_CENTRAL_REL_TOL = 0.01
+CS01_CENTRAL_ABS_USD = 0.01
+
+# Section 8: rec01_hazard_fixed is the same on the par and the off-market
+# trade to 1% (criterion 2: it does not depend on the coupon) ...
+REC01_HAZARD_FIXED_SAME_REL_TOL = 0.01
+
+# ... and equals -0.01 * I * N * side to 0.1%, I the protection integral
+# of Section 4 at the settlement date; the legs are linear in (1 - R), so
+# the identity holds to float precision and 0.1% is the plan's bar.
+REC01_HAZARD_FIXED_REL_TOL = 0.001
+
+# Section 8: JTD is (1 - R) N - mtm - accrued to the cent (criterion 4).
+JTD_ABS_USD = 0.01
+
+# Section 8: IR01 on the IG par trade is under $200 (criterion 5): a par
+# trade's value is near zero, so a 1 bp discounting shift moves little.
+IR01_IG_MAX_USD = 200.0
+
+# Section 8: the plan's bar for IR01 on the distressed upfront trade, over
+# $500 (criterion 5). Not met: the 5Y trade at coupon 500 carries a $1.94m
+# upfront and a 1 bp parallel OIS bump moves it by $399 (review 08, Against
+# the plan); the test pins the number to within this band of the bar.
+IR01_DISTRESSED_MIN_USD = 500.0
+IR01_DISTRESSED_PINNED_BAND = (300.0, 500.0)
+
+# Section 8: a seasoned trade's mtm per unit notional against QuantLib's NPV
+# over P(t_settle), the same closed form on the same curves; float noise.
+QL_SEASONED_ABS_TOL = 1e-9
+
+# Section 8: Chart 2's par-trade MTM is flat in R when the curve is
+# re-bootstrapped: the bootstrap reprices the 5Y spread to 0.01 bp, which is
+# $10 on $10m, so the line varies by under that across the 51 recoveries.
+CHART_2_PAR_FLAT_USD = 10.0
+
 # Section 9: the spec's "small for 10 bp moves".
 EXPLAIN_RESIDUAL_PCT = 2.0
 

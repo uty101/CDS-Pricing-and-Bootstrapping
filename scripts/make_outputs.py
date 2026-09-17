@@ -12,8 +12,9 @@ is the rates file's as_of; a curve file dated otherwise is an error.
 
 Table 1 lists every curve file; Chart 1 draws the three named curves (the
 arbitrage curve has no joint hazard curve to draw). Table 2 (the QuantLib
-comparison, Section 7) and Table 5 (ISDA path against the textbook model)
-cover the three named curves.
+comparison, Section 7), Table 5 (ISDA path against the textbook model) and
+Table 3 (the risk report, Section 8) cover the three named curves; Chart 2
+(recovery dependence) is on IG_flat.
 """
 
 from __future__ import annotations
@@ -68,11 +69,23 @@ def make_table_5(results: dict[str, BootstrapResult]) -> None:
     print(f"table_5_isda_vs_textbook: {len(df)} rows -> {report.TABLES_DIR}")
 
 
+def make_table_3(results: dict[str, BootstrapResult]) -> None:
+    df = report.table_3_risk_report([results[k] for k in CHART_CURVES], discount_curve_from_file(RATES_FILE))
+    print(f"table_3_risk_report: {len(df)} rows -> {report.TABLES_DIR}")
+
+
+def make_chart_2(results: dict[str, BootstrapResult]) -> None:
+    df = report.chart_2_recovery_dependence(results[report.CHART_2_CURVE], discount_curve_from_file(RATES_FILE))
+    print(f"chart_2_recovery_dependence: {len(df)} rows -> {report.CHARTS_DIR}")
+
+
 OUTPUTS = {
     "table_1": make_table_1,
     "chart_1": make_chart_1,
     "table_2": make_table_2,
+    "table_3": make_table_3,
     "table_5": make_table_5,
+    "chart_2": make_chart_2,
 }
 
 

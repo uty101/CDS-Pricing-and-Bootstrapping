@@ -3,8 +3,8 @@ output. Each takes the bootstrap results, writes its files under outputs/
 and returns the DataFrame it wrote. scripts/make_outputs.py runs them; the
 README embeds the files by path and computes nothing.
 
-Section 6 owns Table 1 and Chart 1, Section 7 Tables 2 and 5; later
-sections add their outputs here.
+Section 6 owns Table 1 and Chart 1, Section 7 Tables 2 and 5, Section 8
+Table 3 and Chart 2; later sections add their outputs here.
 
 Table 1, outputs/tables/table_1_hazard_curves.csv (+ .md), one row per
 (curve, pillar): the quote as committed, the conventional spread the
@@ -33,11 +33,32 @@ equivalent of the pillar's conventional spread (cds.pricer.implied_flat_hazard
 on the pillar contract) and the discount curve's continuously compounded
 act/365F zero rate to the maturity. diff_bp is in bp of notional,
 diff_par_bp in bp of spread, both ISDA minus textbook.
+
+Table 3, outputs/tables/table_3_risk_report.csv (+ .md): one row per curve
+for the 5Y protection buy on DEFAULT_NOTIONAL at the standard coupon (100
+bp on IG, 500 bp on HY and distressed), columns curve, trade, then every
+RiskReport field in order (cds.risk.risk, BUILD_PLAN.md Part D.2). The
+Markdown rendering is transposed, measures as rows and trades as columns,
+to two decimal places of currency.
+
+Chart 2, outputs/charts/chart_2_recovery_dependence.png (1600 x 900), two
+panels on the IG curve for R from 0.10 to 0.60 in steps of 0.01 (Part C
+item 1): (a) the implied 5Y default probability 1 - Q(t_5Y) with the
+conventional spreads held fixed and the curve re-bootstrapped at each R;
+(b) the MTM of the par 5Y running-spread trade (coupon = the 5Y par spread
+at the file's recovery) and of the running-spread trade struck 200 bp
+above it, each drawn twice: re-bootstrapped at each R (the desk number,
+flat for the par trade) and with the hazard curve held at the file's
+recovery (the slope -I N, the same for both). The data file
+chart_2_recovery_dependence.csv holds recovery, implied_5y_default_prob,
+mtm_par_trade, mtm_offmarket_trade, mtm_par_trade_hazard_fixed,
+mtm_offmarket_trade_hazard_fixed.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import matplotlib
@@ -51,24 +72,37 @@ from cds import textbook
 from cds.bootstrap import BootstrapResult, market_state, pillar_trade
 from cds.conventions import ACT365F_BASIS
 from cds.pricer import implied_flat_hazard, price
+from cds.risk import recovery_state, risk
 from cds.schedule import year_fraction_act365f
+from cds.types import CDSTrade, Quote, RiskReport
 
 __all__ = [
     "CHART_1_COLUMNS",
+    "CHART_2_COLUMNS",
+    "CHART_2_CURVE",
+    "CHART_2_OFFMARKET_BP",
+    "CHART_2_RECOVERIES",
     "CHARTS_DIR",
     "OUTPUT_DECIMALS",
+    "STANDARD_COUPONS_BY_CURVE",
     "TABLE_1_COLUMNS",
     "TABLE_2_COLUMNS",
+    "TABLE_3_COLUMNS",
+    "TABLE_3_TENOR",
     "TABLE_5_COLUMNS",
     "TABLE_5_COUPONS_BP",
     "TABLE_5_TENORS",
     "TABLES_DIR",
     "chart_1_survival_hazard",
+    "chart_2_recovery_dependence",
+    "chart_2_trades",
     "markdown_table",
     "rounded",
     "table_1_hazard_curves",
     "table_2_quantlib_validation",
+    "table_3_risk_report",
     "table_5_isda_vs_textbook",
+    "trade_label",
     "write_table",
 ]
 
@@ -103,10 +137,35 @@ TABLE_5_COLUMNS = (
     "diff_par_bp",
 )
 
-# Table 5: the tenors compared and the coupon each curve is priced at (the
-# Section 7 trades' coupons: 100 bp on IG, 500 bp on HY and distressed).
+# The standard coupon each illustrative curve trades at: 100 bp on IG, 500
+# bp on HY and distressed (the Section 7 trades, Table 3 and Table 5).
+STANDARD_COUPONS_BY_CURVE = {"IG_flat": 100.0, "HY_steep": 500.0, "distressed_inverted": 500.0}
+
+# Table 5: the tenors compared and the coupon each curve is priced at.
 TABLE_5_TENORS = ("1Y", "5Y", "10Y")
-TABLE_5_COUPONS_BP = {"IG_flat": 100.0, "HY_steep": 500.0, "distressed_inverted": 500.0}
+TABLE_5_COUPONS_BP = STANDARD_COUPONS_BY_CURVE
+
+# Table 3: the 5Y buy on each curve; the columns after curve and trade are
+# the RiskReport fields in their declared order.
+TABLE_3_TENOR = "5Y"
+RISK_FIELDS = tuple(RiskReport.__dataclass_fields__)
+TABLE_3_COLUMNS = ("curve", "trade", *RISK_FIELDS)
+
+# Chart 2: the IG curve, R from 0.10 to 0.60 in 0.01 steps, and the
+# off-market trade struck this many bp above the 5Y par spread (below would
+# be a negative coupon on IG, whose 5Y par spread is 90 bp).
+CHART_2_CURVE = "IG_flat"
+CHART_2_RECOVERIES = tuple(round(0.10 + 0.01 * k, 2) for k in range(51))
+CHART_2_OFFMARKET_BP = 200.0
+CHART_2_COLUMNS = (
+    "recovery",
+    "implied_5y_default_prob",
+    "mtm_par_trade",
+    "mtm_offmarket_trade",
+    "mtm_par_trade_hazard_fixed",
+    "mtm_offmarket_trade_hazard_fixed",
+)
+THOUSAND = 1e3
 BP_PER_UNIT = 1e4
 
 PERCENT = 100.0
@@ -143,7 +202,16 @@ MD_DECIMALS = {
     "isda_par_spread_bp": 6,
     "textbook_par_spread_bp": 6,
     "diff_par_bp": 4,
+    "recovery": 2,
+    "implied_5y_default_prob": 6,
+    "mtm_par_trade": 2,
+    "mtm_offmarket_trade": 2,
+    "mtm_par_trade_hazard_fixed": 2,
+    "mtm_offmarket_trade_hazard_fixed": 2,
 }
+
+# Table 3's transposed Markdown: every measure is in currency.
+TABLE_3_MD_DECIMALS = 2
 
 # Chart colours: three categorical series in a fixed order (curve order as
 # given), text in ink tones, hairline grey grid.
@@ -284,6 +352,115 @@ def table_5_isda_vs_textbook(
             )
     df = pd.DataFrame(rows, columns=list(TABLE_5_COLUMNS))
     write_table(df, out_dir / "table_5_isda_vs_textbook")
+    return df
+
+
+def trade_label(tenor: str, coupon_bp: float) -> str:
+    """The trade column of Tables 2 and 3: "<tenor>_buy_c<coupon>"."""
+    return f"{tenor}_buy_c{coupon_bp:g}"
+
+
+def table_3_risk_report(
+    results: Sequence[BootstrapResult],
+    discount,
+    coupons_bp: dict[str, float] | None = None,
+    out_dir: Path = TABLES_DIR,
+) -> pd.DataFrame:
+    """Table 3: the risk report of the 5Y buy at the standard coupon on each
+    curve, columns TABLE_3_COLUMNS; the .md transposed."""
+    coupons_bp = STANDARD_COUPONS_BY_CURVE if coupons_bp is None else coupons_bp
+    rows = []
+    for r in results:
+        quotes = r.quotes
+        coupon_bp = coupons_bp[quotes.label]
+        trade = pillar_trade(quotes, quotes.pillars.index(TABLE_3_TENOR), coupon_bp)
+        report = risk(market_state(r, discount), trade)
+        rows.append({"curve": quotes.label, "trade": trade_label(TABLE_3_TENOR, coupon_bp), **{f: getattr(report, f) for f in RISK_FIELDS}})
+    df = pd.DataFrame(rows, columns=list(TABLE_3_COLUMNS))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = out_dir / "table_3_risk_report"
+    rounded(df).to_csv(stem.with_suffix(".csv"), index=False, lineterminator="\n")
+    # Measures as rows, rounded to the cent first so a -0.001 renders as 0.00, not -0.00.
+    transposed = pd.DataFrame({"measure": list(RISK_FIELDS), **{f"{row['curve']} {row['trade']}": [round(row[f], TABLE_3_MD_DECIMALS) + 0.0 for f in RISK_FIELDS] for row in rows}})
+    decimals = {c: TABLE_3_MD_DECIMALS for c in transposed.columns}
+    stem.with_suffix(".md").write_text(markdown_table(transposed, decimals), encoding="utf-8", newline="\n")
+    return df
+
+
+def _running_spread_trade(trade: CDSTrade, coupon_bp: float, recovery: float | None = None) -> CDSTrade:
+    """The trade as a running-spread contract at coupon_bp (a par_spread_bp
+    quote equal to the coupon, Part B item 8), at another R if given."""
+    return replace(trade, coupon_bp=coupon_bp, quote=Quote(kind="par_spread_bp", value=coupon_bp), recovery=trade.recovery if recovery is None else recovery)
+
+
+def chart_2_trades(result: BootstrapResult, discount) -> tuple[CDSTrade, CDSTrade]:
+    """The two Chart 2 trades on the curve: the 5Y running-spread trade at
+    the curve's own 5Y par spread and the one struck CHART_2_OFFMARKET_BP
+    above it, both protection buys on DEFAULT_NOTIONAL at the file's R."""
+    quotes = result.quotes
+    pillar = pillar_trade(quotes, quotes.pillars.index(TABLE_3_TENOR), STANDARD_COUPONS_BY_CURVE.get(quotes.label, STANDARD_COUPONS_BY_CURVE[CHART_2_CURVE]))
+    s_par = price(market_state(result, discount), pillar).par_spread_bp
+    return _running_spread_trade(pillar, s_par), _running_spread_trade(pillar, s_par + CHART_2_OFFMARKET_BP)
+
+
+def _chart_2_rows(result: BootstrapResult, discount) -> pd.DataFrame:
+    base = market_state(result, discount)
+    par, offmarket = chart_2_trades(result, discount)
+    t_5y = year_fraction_act365f(result.quotes.as_of, result.pillar_dates[result.quotes.pillars.index(TABLE_3_TENOR)])
+    spreads = result.conventional_spreads_bp
+    rows = []
+    for recovery in CHART_2_RECOVERIES:
+        refit = recovery_state(base, recovery, hazard_fixed=False, spreads_bp=spreads)
+        fixed = recovery_state(base, recovery, hazard_fixed=True)
+        par_r, off_r = replace(par, recovery=recovery), replace(offmarket, recovery=recovery)
+        rows.append(
+            {
+                "recovery": recovery,
+                "implied_5y_default_prob": 1.0 - refit.survival.Q(t_5y),
+                "mtm_par_trade": price(refit, par_r).mtm,
+                "mtm_offmarket_trade": price(refit, off_r).mtm,
+                "mtm_par_trade_hazard_fixed": price(fixed, par_r).mtm,
+                "mtm_offmarket_trade_hazard_fixed": price(fixed, off_r).mtm,
+            }
+        )
+    return pd.DataFrame(rows, columns=list(CHART_2_COLUMNS))
+
+
+def chart_2_recovery_dependence(result: BootstrapResult, discount, out_dir: Path = CHARTS_DIR) -> pd.DataFrame:
+    """Chart 2: implied 5Y default probability and the two trades' MTM
+    against recovery on the given (IG) curve; the data written next to it."""
+    df = _chart_2_rows(result, discount)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rounded(df).to_csv(out_dir / "chart_2_recovery_dependence.csv", index=False, lineterminator="\n")
+    par, offmarket = chart_2_trades(result, discount)
+    base_r = result.quotes.recovery
+    label = result.quotes.label
+
+    fig, (ax_pd, ax_mtm) = plt.subplots(1, 2, figsize=(CHART_SIZE_PX[0] / CHART_DPI, CHART_SIZE_PX[1] / CHART_DPI), dpi=CHART_DPI)
+    fig.patch.set_facecolor(SURFACE)
+    r_pct = PERCENT * df["recovery"].to_numpy()
+    ax_pd.plot(r_pct, PERCENT * df["implied_5y_default_prob"].to_numpy(), color=SERIES_COLOURS[0], linewidth=2, label=f"{label}, spreads fixed, curve re-bootstrapped at each R")
+    series = (
+        ("mtm_par_trade", SERIES_COLOURS[0], "-", f"par trade, c = {par.coupon_bp:g} bp, re-bootstrapped (rec01)"),
+        ("mtm_par_trade_hazard_fixed", SERIES_COLOURS[0], "--", f"par trade, c = {par.coupon_bp:g} bp, hazard fixed (rec01_hazard_fixed)"),
+        ("mtm_offmarket_trade", SERIES_COLOURS[1], "-", f"off-market trade, c = {offmarket.coupon_bp:g} bp, re-bootstrapped"),
+        ("mtm_offmarket_trade_hazard_fixed", SERIES_COLOURS[1], "--", f"off-market trade, c = {offmarket.coupon_bp:g} bp, hazard fixed"),
+    )
+    for col, colour, style, text in series:
+        ax_mtm.plot(r_pct, df[col].to_numpy() / THOUSAND, color=colour, linewidth=2, linestyle=style, label=text)
+    _style_axis(ax_pd, "(a) Implied 5Y default probability 1 − Q(5Y)", "1 − Q(5Y), %")
+    _style_axis(ax_mtm, "(b) MTM of the 5Y protection buy, $10m notional", "MTM, $ thousand")
+    for ax in (ax_pd, ax_mtm):
+        ax.axvline(PERCENT * base_r, color=INK_SECONDARY, linewidth=1, linestyle=":")
+        ax.set_xlabel("assumed recovery R, %", color=INK_SECONDARY, fontsize=10)
+        ax.set_xlim(PERCENT * CHART_2_RECOVERIES[0], PERCENT * CHART_2_RECOVERIES[-1])
+        ax.legend(frameon=False, loc="best", fontsize=9, labelcolor=INK)
+    ax_mtm.axhline(0.0, color=GRID, linewidth=1)
+    as_of = result.quotes.as_of.isoformat()
+    fig.suptitle(f"Recovery dependence on {label}, valuation date {as_of} (dotted: the file's R = {base_r:.0%})", x=0.02, ha="left", color=INK, fontsize=15)
+    fig.subplots_adjust(left=0.06, right=0.98, top=0.86, bottom=0.11, wspace=0.24)
+    fig.savefig(out_dir / "chart_2_recovery_dependence.png", dpi=CHART_DPI, facecolor=SURFACE)
+    plt.close(fig)
     return df
 
 
