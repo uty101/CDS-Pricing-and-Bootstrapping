@@ -25,7 +25,9 @@ from cds.risk import rec01
 from cds.scenarios import (
     CHART_3_MULTIPLIERS,
     RUN_COLUMNS,
+    RUN_VALUE_COLUMNS,
     SPREAD_MULTIPLIERS,
+    STATUS_OK,
     Scenario,
     combined_scenario,
     flatten_scenario,
@@ -44,7 +46,7 @@ from cds.scenarios import (
 )
 from cds.schedule import cds_schedule
 from cds.types import CDSTrade
-from tests.conftest import GRID_SECONDS, LEGS_VECTOR_ABS_TOL, PRICER_IDENTITY_ABS_TOL
+from tests.conftest import BOOTSTRAP_REPRICE_BP, GRID_SECONDS, LEGS_VECTOR_ABS_TOL, OIS_REPRICE_BP, PRICER_IDENTITY_ABS_TOL
 from tests.test_legs import RATES_FILE
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -59,9 +61,11 @@ RANDOM_SEED = 20260921
 N_RANDOM = 5
 
 # The x4 spread scenario does not bootstrap on HY (the 10Y pillar at 2400
-# bp needs a forward hazard above the 500% bound) or on distressed (the 5Y
-# pillar at 4800 bp needs a negative hazard); review 09 records both.
-FAILING = {"HY_steep": ("spread_x4",), "distressed_inverted": ("spread_x4",)}
+# bp needs a forward hazard above the 500% bound: the hazard-cap ValueError)
+# or on distressed (the 5Y pillar at 4800 bp needs a negative hazard:
+# BootstrapArbitrageError); review 09 records both. run() writes the row
+# with the error's class as its status (item 50).
+FAILING = {"HY_steep": {"spread_x4": "ValueError"}, "distressed_inverted": {"spread_x4": "BootstrapArbitrageError"}}
 
 
 @pytest.fixture(scope="module")
@@ -139,10 +143,10 @@ def test_scenario_state_is_the_bootstrap_of_the_transformed_inputs(results: dict
     assert combined.discount.par_rates_pct == tuple(x - 1.0 for x in discount.par_rates_pct)
     assert combined.discount.node_dates == discount.node_dates and combined.survival.pillar_dates == state.survival.pillar_dates
     # The scenario curve reprices its own spreads: the 5Y par spread is 180 bp.
-    assert price(combined, replace(_five_year(r, 100.0), recovery=0.20)).par_spread_bp == pytest.approx(180.0, abs=0.01)
+    assert price(combined, replace(_five_year(r, 100.0), recovery=0.20)).par_spread_bp == pytest.approx(180.0, abs=BOOTSTRAP_REPRICE_BP)
     # The base scenario is the base state.
     base = scenario_state(state, spread_scenario(1.0), spreads_bp=r.conventional_spreads_bp)
-    assert base.survival.pillar_hazards == pytest.approx(state.survival.pillar_hazards, abs=1e-12)
+    assert base.survival.pillar_hazards == state.survival.pillar_hazards  # the same inputs, the same Brent solves
     assert base.discount is state.discount
     # Rates rebuilt once per distinct shift.
     states = scenario_states(state, (rates_scenario(100.0), rates_scenario(100.0), rates_scenario(-100.0)), spreads_bp=r.conventional_spreads_bp)
@@ -150,23 +154,40 @@ def test_scenario_state_is_the_bootstrap_of_the_transformed_inputs(results: dict
 
 
 @pytest.mark.parametrize("label", NAMED_CURVES)
-def test_the_grid_runs_on_every_curve_except_the_scenarios_it_cannot_bootstrap(results: dict[str, BootstrapResult], discount: DiscountCurve, label: str) -> None:
+def test_the_grid_runs_on_every_curve_and_skips_the_scenarios_it_cannot_bootstrap(results: dict[str, BootstrapResult], discount: DiscountCurve, label: str) -> None:
+    """Item 50: run() with the default on_error = "skip" writes every
+    scenario of the standard grid; the ones that do not bootstrap carry
+    the error's class in status and nan in the value columns, and
+    on_error = "raise" propagates the error naming the scenario."""
     r = results[label]
     state = market_state(r, discount)
     trade = _five_year(r, COUPONS_BP[label])
     grid = standard_grid(r.quotes.recovery)
-    for name in FAILING.get(label, ()):
+    failing = FAILING.get(label, {})
+    for name in failing:
         with pytest.raises(ValueError, match=name):
             scenario_state(state, next(g for g in grid if g.name == name), spreads_bp=r.conventional_spreads_bp)
-    ok = tuple(g for g in grid if g.name not in FAILING.get(label, ()))
-    df = run(state, trade, ok, spreads_bp=r.conventional_spreads_bp)
-    assert tuple(df.columns) == RUN_COLUMNS and list(df["scenario"]) == [g.name for g in ok]
+        with pytest.raises(ValueError, match=name):
+            run(state, trade, grid, spreads_bp=r.conventional_spreads_bp, on_error="raise")
+    df = run(state, trade, grid, spreads_bp=r.conventional_spreads_bp)
+    assert tuple(df.columns) == RUN_COLUMNS and list(df["scenario"]) == [g.name for g in grid]
     by = df.set_index("scenario")
+    assert dict(by.loc[list(failing), "status"]) == failing
+    assert (by["status"] == STATUS_OK).sum() == len(grid) - len(failing)
+    for name in failing:
+        assert by.loc[name, list(RUN_VALUE_COLUMNS)].isna().all()
+        # The inputs are still written: x4 spreads, the curve's R, no rate shift.
+        assert by.loc[name, "spread_5y_bp"] == 4.0 * r.conventional_spreads_bp[5] and by.loc[name, "recovery"] == r.quotes.recovery
+    assert df.loc[df["status"] == STATUS_OK, list(RUN_VALUE_COLUMNS)].notna().all().all()
+    ok = tuple(g for g in grid if g.name not in failing)
+    by = by.loc[[g.name for g in ok]]
+    with pytest.raises(ValueError):
+        run(state, trade, ok, spreads_bp=r.conventional_spreads_bp, on_error="ignore")
     assert abs(by.loc["spread_x1", "pnl_full"]) < PRICER_IDENTITY_ABS_TOL * DEFAULT_NOTIONAL
     # The buyer gains as spreads widen, monotone in the multiplier.
     spread_rows = by.loc[[g.name for g in ok if g.name.startswith("spread_x")]]
     assert (np.diff(spread_rows["pnl_full"].to_numpy()) > 0).all()
-    assert (spread_rows["par_spread_bp"].to_numpy() == pytest.approx(spread_rows["spread_multiplier"].to_numpy() * r.conventional_spreads_bp[5], abs=0.01))
+    assert (spread_rows["par_spread_bp"].to_numpy() == pytest.approx(spread_rows["spread_multiplier"].to_numpy() * r.conventional_spreads_bp[5], abs=BOOTSTRAP_REPRICE_BP))
     # Steepen raises the 5Y spread by 25 bp and the buyer gains; flatten the reverse.
     assert by.loc["steepen_35bp", "pnl_full"] > 0.0 > by.loc["flatten_35bp", "pnl_full"]
     assert by.loc["steepen_35bp", "spread_5y_bp"] == r.conventional_spreads_bp[5] + 25.0
@@ -177,7 +198,7 @@ def test_the_grid_runs_on_every_curve_except_the_scenarios_it_cannot_bootstrap(r
         assert np.sign(by.loc[rec_name, "pnl_full"]) == -np.sign(r01)  # R falls
     else:
         assert abs(by.loc[rec_name, "pnl_full"]) < 1.0
-    assert by.loc[rec_name, "recovery"] == pytest.approx(0.5 * r.quotes.recovery)
+    assert by.loc[rec_name, "recovery"] == 0.5 * r.quotes.recovery
     assert by.loc["rates_+100bp", "rate_shift_bp"] == 100.0
 
 
@@ -277,6 +298,7 @@ def test_sweep_plus_table_4_grid_revalues_in_under_ten_seconds(results: dict[str
     elapsed = time.perf_counter() - start
     assert elapsed < GRID_SECONDS, elapsed
     assert len(frames[0]) == 71 and len(frames[1]) == 14
+    assert (frames[0]["status"] == STATUS_OK).all() and (frames[1]["status"] == STATUS_OK).all()  # every IG scenario bootstraps
     # The sweep passes through the base with zero P&L and is increasing in the multiplier.
     sweep = frames[0].set_index("spread_multiplier")
     assert abs(sweep.loc[1.0, "pnl_full"]) < PRICER_IDENTITY_ABS_TOL * DEFAULT_NOTIONAL
@@ -289,7 +311,7 @@ def test_flat_discount_scenario_rates_reprice(results: dict[str, BootstrapResult
     state = market_state(r, discount)
     up = scenario_state(state, rates_scenario(100.0), spreads_bp=r.conventional_spreads_bp).discount
     for tenor, rate in zip(discount.tenors, discount.par_rates_pct):
-        assert par_rate_from_curve(up, tenor) == pytest.approx(rate + 1.0, abs=1e-8)
+        assert par_rate_from_curve(up, tenor) == pytest.approx(rate + 1.0, abs=OIS_REPRICE_BP / 100.0)  # bp to percent
 
 
 def test_make_outputs_knows_table_4_and_chart_3() -> None:

@@ -29,10 +29,12 @@ from cds.scenarios import combined_scenario, parallel_scenario, rates_scenario, 
 from cds.types import CDSTrade, ExplainResult
 from tests.conftest import (
     EXPLAIN_RESIDUAL_PCT,
-    EXPLAIN_X3_PINNED_BAND,
+    EXPLAIN_X3_GAMMA_REMOVES_FRACTION,
     EXPLAIN_X3_RESIDUAL_MIN_PCT,
     PRICER_IDENTITY_ABS_TOL,
+    SENSITIVITY_RECOMPUTE_ABS_USD,
     assert_output_current,
+    assert_output_value,
 )
 from tests.test_legs import RATES_FILE
 
@@ -123,22 +125,21 @@ def test_gamma_from_the_report_is_the_second_difference_of_the_parallel_bump(res
     up = price(spread_bumped_state(state, (BUMP_SPREAD_BP,) * n, spreads_bp=spreads), trade).mtm
     down = price(spread_bumped_state(state, (-BUMP_SPREAD_BP,) * n, spreads_bp=spreads), trade).mtm
     base = price(state, trade).mtm
-    assert sens["IG_flat"].gamma == pytest.approx(up - 2.0 * base + down, abs=1e-6)
+    assert sens["IG_flat"].gamma == pytest.approx(up - 2.0 * base + down, abs=SENSITIVITY_RECOMPUTE_ABS_USD)
 
 
 # --- criterion 5: the x3 scenario on HY --------------------------------------------------
 
 
 def test_x3_spread_scenario_residual_on_hy_is_material(results, discount, sens) -> None:
-    """The plan's bar is over 5% of pnl_full. With the gamma term in the
-    explain the residual is -3.2% (review 09, Against the plan); without
-    it the unexplained part is 26%. Pinned to the band until the reviewer
-    resets the bar."""
+    """Criterion 5 as restated (item 49): first order alone leaves a
+    residual over 5% of pnl_full (26%), and the gamma term removes at least
+    half of it (leaving 3.2%)."""
     e = _explain(results, discount, sens, "HY_steep", spread_scenario(3.0))
-    lo, hi = EXPLAIN_X3_PINNED_BAND
-    assert hi == EXPLAIN_X3_RESIDUAL_MIN_PCT and lo < abs(e.residual_pct_of_total) < hi
     first_order_only = 100.0 * (e.pnl_full - e.pnl_spread_first_order) / e.pnl_full
     assert abs(first_order_only) > EXPLAIN_X3_RESIDUAL_MIN_PCT
+    assert abs(e.residual_pct_of_total) <= (1.0 - EXPLAIN_X3_GAMMA_REMOVES_FRACTION) * abs(first_order_only)
+    assert e.residual == pytest.approx(e.pnl_full - e.pnl_spread_first_order - e.pnl_spread_gamma)  # the other terms are zero
     assert e.pnl_full < e.pnl_spread_first_order and e.pnl_spread_gamma < 0.0
 
 
@@ -167,7 +168,7 @@ def test_recovery_rates_and_cross_terms_carry_the_report_sensitivities(results, 
     v_joint = price(joint, replace(trade, recovery=r_up)).mtm
     v_s = price(spread_bumped_state(state, (BUMP_SPREAD_BP,) * len(spreads), spreads_bp=spreads), trade).mtm
     v_r = price(recovery_state(state, r_up, hazard_fixed=False, spreads_bp=spreads), replace(trade, recovery=r_up)).mtm
-    assert sens["IG_flat"].cross == pytest.approx(v_joint - v_s - v_r + rep.mtm, abs=1e-6)
+    assert sens["IG_flat"].cross == pytest.approx(v_joint - v_s - v_r + rep.mtm, abs=SENSITIVITY_RECOMPUTE_ABS_USD)
 
 
 def test_explain_pnl_full_is_the_vectorised_grids_pnl(results, discount, sens) -> None:
@@ -199,7 +200,7 @@ def test_theta_term_over_a_date_gap(results, discount, sens) -> None:
         assert tenor.pnl_spread_first_order == 0.0 and tenor.pnl_rates == 0.0 and tenor.pnl_recovery == 0.0
         assert tenor.residual == pytest.approx(roll - cal)
         calendar = explain(state, shifted_state(state, t1, "calendar"), trade, sensitivities_t0=sens["IG_flat"])
-        assert calendar.pnl_full == pytest.approx(cal) and calendar.residual == pytest.approx(0.0, abs=1e-6)
+        assert calendar.pnl_full == pytest.approx(cal) and calendar.residual == pytest.approx(0.0, abs=SENSITIVITY_RECOMPUTE_ABS_USD)
         assert calendar.pnl_theta == pytest.approx(theta(state, trade, t1, "calendar"))
     with pytest.raises(ValueError):
         explain(shifted_state(state, state.as_of + ONE_DAY, "tenor"), state, trade)
@@ -253,7 +254,6 @@ def test_table_4_is_current_and_has_the_fixed_columns(results, discount, sens, t
     for stem in ("table_4_pnl_explain", "table_4_pnl_explain_full"):
         committed = report.TABLES_DIR / f"{stem}.csv"
         assert_output_current(tmp_path / f"{stem}.csv", committed)
-        assert (tmp_path / f"{stem}.md").read_text(encoding="utf-8") == committed.with_suffix(".md").read_text(encoding="utf-8")
     # The six rows are the full table's rows.
     by = full.set_index("scenario")
     for row in six.itertuples(index=False):
@@ -285,7 +285,8 @@ def test_chart_3_is_current_1600_by_900_and_shows_the_concavity(results, discoun
     gap_second = np.abs(fresh["pnl_full"] - fresh["pnl_second_order"]).to_numpy()
     assert (fresh["pnl_full"].to_numpy()[m != 1.0] < fresh["pnl_first_order"].to_numpy()[m != 1.0]).all()
     assert (gap_second[m != 1.0] < gap_first[m != 1.0]).all()
-    # The x3 row is Table 4's x3 explain.
+    # The x3 row is Table 4's x3 explain (one output against another: item 52's rule).
     committed = pd.read_csv(report.TABLES_DIR / "table_4_pnl_explain.csv").set_index("scenario")
-    assert by.loc[3.0, "pnl_full"] == pytest.approx(committed.loc["spread_x3", "pnl_full"], abs=1e-6)
-    assert by.loc[3.0, "pnl_second_order"] == pytest.approx(committed.loc["spread_x3", "pnl_spread_first_order"] + committed.loc["spread_x3", "pnl_spread_gamma"], abs=1e-6)
+    assert_output_value(by.loc[3.0, "pnl_full"], committed.loc["spread_x3", "pnl_full"], "chart 3 x3 pnl_full against table 4")
+    assert_output_value(by.loc[3.0, "pnl_first_order"], committed.loc["spread_x3", "pnl_spread_first_order"], "chart 3 x3 first order against table 4")
+    assert_output_value(by.loc[3.0, "pnl_second_order"], committed.loc["spread_x3", "pnl_spread_first_order"] + committed.loc["spread_x3", "pnl_spread_gamma"], "chart 3 x3 second order against table 4")

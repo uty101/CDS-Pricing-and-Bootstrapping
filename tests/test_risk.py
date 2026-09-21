@@ -59,6 +59,7 @@ from tests.conftest import (
     THETA_FLAT_USD,
     THETA_STEEP_USD,
     assert_output_current,
+    assert_output_value,
 )
 from tests.test_legs import RATES_FILE
 
@@ -438,12 +439,20 @@ def test_table_3_is_current_and_has_the_fixed_columns(results: dict[str, Bootstr
     assert list(fresh["trade"]) == ["5Y_buy_c100", "5Y_buy_c500", "5Y_buy_c500"]
     committed = report.TABLES_DIR / "table_3_risk_report.csv"
     assert_output_current(tmp_path / "table_3_risk_report.csv", committed)
-    assert (tmp_path / "table_3_risk_report.md").read_text(encoding="utf-8") == committed.with_suffix(".md").read_text(encoding="utf-8")
+    # The table's currency columns are the report's fields, under the output rule (item 52).
     for row in fresh.itertuples(index=False):
         for f in fields(RiskReport):
-            assert getattr(row, f.name) == pytest.approx(getattr(reports[row.curve], f.name))
-    md = committed.with_suffix(".md").read_text(encoding="utf-8").splitlines()
+            assert_output_value(getattr(row, f.name), getattr(reports[row.curve], f.name), f"{row.curve} {f.name}")
+    # The Markdown is rendered wide, one column per trade, from the frame just written; its layout is checked, not its text.
+    md = (tmp_path / "table_3_risk_report.md").read_text(encoding="utf-8").splitlines()
     assert md[0].startswith("| measure |") and md[2].startswith("| mtm |") and len(md) == 2 + len(fields(RiskReport))
+    # Table 3's 5Y CS01 is Table 2's cs01_usd row, ours, on every curve (one output against another: item 52's rule).
+    table_2 = pd.read_csv(report.TABLES_DIR / "table_2_quantlib_validation.csv")
+    cs01_rows = table_2[table_2["metric"] == "cs01_usd"].set_index("curve")
+    assert set(cs01_rows.index) == set(NAMED_CURVES)
+    table_3 = pd.read_csv(committed).set_index("curve")
+    for curve in NAMED_CURVES:
+        assert_output_value(table_3.loc[curve, "cs01_5y"], cs01_rows.loc[curve, "ours"], f"table 3 cs01_5y against table 2 on {curve}")
 
 
 def test_chart_2_is_current_1600_by_900_and_shows_the_rec01_point(results: dict[str, BootstrapResult], discount: DiscountCurve, tmp_path: Path) -> None:
@@ -467,9 +476,9 @@ def test_chart_2_is_current_1600_by_900_and_shows_the_rec01_point(results: dict[
     assert step == pytest.approx(rec01_hazard_fixed(state, par), rel=REC01_HAZARD_FIXED_REL_TOL)
     step_off = base.loc[0.41, "mtm_offmarket_trade_hazard_fixed"] - base.loc[0.40, "mtm_offmarket_trade_hazard_fixed"]
     assert step_off == pytest.approx(step, rel=REC01_HAZARD_FIXED_SAME_REL_TOL)
-    assert base.loc[0.41, "mtm_offmarket_trade"] - base.loc[0.40, "mtm_offmarket_trade"] == pytest.approx(rec01(state, off, spreads_bp=r.conventional_spreads_bp), rel=1e-6)
+    assert_output_value(base.loc[0.41, "mtm_offmarket_trade"] - base.loc[0.40, "mtm_offmarket_trade"], rec01(state, off, spreads_bp=r.conventional_spreads_bp), "chart 2 off-market step against rec01")
     # At the file's R the two readings meet.
-    assert base.loc[0.40, "mtm_par_trade"] == pytest.approx(base.loc[0.40, "mtm_par_trade_hazard_fixed"])
+    assert_output_value(base.loc[0.40, "mtm_par_trade"], base.loc[0.40, "mtm_par_trade_hazard_fixed"], "chart 2 at R = 0.40")
     assert par.coupon_bp == pytest.approx(90.0) and off.coupon_bp == pytest.approx(90.0 + report.CHART_2_OFFMARKET_BP)
     # Item 43: the legend slopes come from the CSV; the hazard-fixed lines are linear, so the fit is the 1-point step.
     slopes = report.chart_2_slopes(pd.read_csv(committed))

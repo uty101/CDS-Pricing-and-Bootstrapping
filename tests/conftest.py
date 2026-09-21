@@ -110,13 +110,18 @@ GRID_SECONDS = 10.0
 # stacked arrays, so the gap is float noise.
 LEGS_VECTOR_ABS_TOL = 1e-12
 
-# Section 9, criterion 5: the plan's bar for the x3 spread scenario on HY,
-# the residual over 5% of pnl_full. Not met with the gamma term in the
-# explain: -3.2% (review 09, Against the plan); without it (first order
-# only) the unexplained part is 26%. The test pins the number to within
-# this band of the bar until the reviewer resets it.
+# Section 9, criterion 5 as restated (docs/CONVENTIONS_RESOLVED.md item
+# 49): on the x3 spread scenario on HY, first order alone leaves a residual
+# over 5% of pnl_full (26% in review 09), and adding the gamma term removes
+# at least half of that residual (it leaves 3.2%).
 EXPLAIN_X3_RESIDUAL_MIN_PCT = 5.0
-EXPLAIN_X3_PINNED_BAND = (2.0, 5.0)
+EXPLAIN_X3_GAMMA_REMOVES_FRACTION = 0.5
+
+# Section 9: a sensitivity recomputed in a test from its own price() calls
+# (Gamma from three, the cross term from four, a zero residual) is the same
+# difference of $10m-scale values as the module's; 1e-6 $ is the noise floor
+# of such a difference, the same floor OUTPUT_ABS_TOL states.
+SENSITIVITY_RECOMPUTE_ABS_USD = 1e-6
 
 # Section 1: accrual fractions are ratios of integers; 1e-12 is float noise.
 DAY_COUNT_ABS_TOL = 1e-12
@@ -214,11 +219,29 @@ UPFRONT_CURVE_VS_FLAT_HY_MIN_BP = 1.0
 OUTPUT_ABS_TOL = 1e-6
 
 
+def assert_output_value(actual, committed, what: str = "") -> None:
+    """One number against its committed counterpart under the same rule as
+    assert_output_current: |actual - committed| within
+    max(OUTPUT_ABS_TOL, OUTPUT_ABS_TOL * |committed|). Every cross-check of
+    one output against another (Chart 3's x3 row against Table 4, Table 3's
+    5Y CS01 against Table 2) uses this, never a bare absolute tolerance
+    (docs/CONVENTIONS_RESOLVED.md item 52)."""
+    import math
+
+    if math.isnan(actual) or math.isnan(committed):
+        assert math.isnan(actual) and math.isnan(committed), (what, actual, committed)
+        return
+    allowed = max(OUTPUT_ABS_TOL, OUTPUT_ABS_TOL * abs(committed))
+    assert abs(actual - committed) <= allowed, (what, actual, committed, abs(actual - committed) - allowed)
+
+
 def assert_output_current(fresh_csv, committed_csv) -> None:
     """The two CSVs hold the same table: same columns in the same order, same
     row count, text columns equal, every float within
     max(OUTPUT_ABS_TOL, OUTPUT_ABS_TOL * |committed value|) (items 34, 38
-    and 45). Imported by every test that checks an output is current."""
+    and 45). Imported by every test that checks an output is current. The
+    Markdown rendering of a table is never compared (item 52): it is
+    rendered from the CSV that is."""
     import pandas as pd
 
     fresh, committed = pd.read_csv(fresh_csv), pd.read_csv(committed_csv)

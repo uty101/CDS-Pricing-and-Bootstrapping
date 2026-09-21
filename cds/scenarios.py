@@ -44,12 +44,20 @@ price(). Symbols follow docs/SPEC.md section 6.
 run() returns one row per scenario with the scenario's inputs (the
 multiplier, the recovery, the rate shift and the eight spreads it was
 bootstrapped from), the trade's mtm, pnl_full = mtm - mtm(base), the
-scenario par spread and clean upfront (RUN_COLUMNS).
+scenario par spread and clean upfront (RUN_COLUMNS). A scenario whose
+bootstrap raises (spread_x4 on HY and distressed, whose 10Y and 5Y pillars
+sit past what any positive hazard reaches) is, with on_error = "skip" (the
+default), written with status = the class of the error the bootstrap
+raised and nan in the value columns; status = "ok" otherwise. With
+on_error = "raise" the error propagates naming the scenario
+(docs/CONVENTIONS_RESOLVED.md item 50).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
@@ -65,11 +73,15 @@ __all__ = [
     "CHART_3_MULTIPLIERS",
     "RATE_SHIFTS_BP",
     "RECOVERY_RATIOS",
+    "ON_ERROR",
     "RUN_COLUMNS",
+    "RUN_VALUE_COLUMNS",
     "SPREAD_MULTIPLIERS",
+    "STATUS_OK",
     "STEEPEN_STEP_BP",
     "Scenario",
     "combined_scenario",
+    "error_status",
     "flatten_scenario",
     "parallel_scenario",
     "rates_scenario",
@@ -97,8 +109,13 @@ COMBINED = {"spread_multiplier": 2.0, "recovery_ratio": 0.5, "rate_shift_bp": -1
 # Chart 3: x0.5 to x4 in 0.05 steps, 71 scenarios.
 CHART_3_MULTIPLIERS = tuple(round(0.5 + 0.05 * k, 2) for k in range(71))
 
+OnError = Literal["raise", "skip"]
+ON_ERROR = ("raise", "skip")
+STATUS_OK = "ok"
+
 RUN_COLUMNS = (
     "scenario",
+    "status",
     "spread_multiplier",
     "recovery",
     "rate_shift_bp",
@@ -108,6 +125,11 @@ RUN_COLUMNS = (
     "par_spread_bp",
     "clean_upfront_pct",
 )
+
+# The columns written as nan when a scenario does not bootstrap; the
+# scenario's inputs (multiplier, recovery, rate shift, spreads) are known
+# without a bootstrap and are written.
+RUN_VALUE_COLUMNS = ("mtm", "pnl_full", "par_spread_bp", "clean_upfront_pct")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -235,18 +257,49 @@ def scenario_states(
     half_day_bias: bool = True,
 ) -> list[MarketState]:
     """One bootstrap per scenario; the discount curve is rebuilt once per
-    distinct rate shift."""
+    distinct rate shift. Raises on the first scenario that does not
+    bootstrap, naming it."""
+    out = _scenario_states_or_errors(state, grid, spreads_bp=spreads_bp, calendar=calendar, engine=engine, half_day_bias=half_day_bias)
+    for item in out:
+        if isinstance(item, Exception):
+            raise item
+    return out
+
+
+def _scenario_states_or_errors(
+    state: MarketState,
+    grid: tuple[Scenario, ...],
+    *,
+    spreads_bp: tuple[float, ...] | None,
+    calendar: str,
+    engine: Engine,
+    half_day_bias: bool,
+) -> list[MarketState | ValueError]:
+    """scenario_states, with the ValueError a failing bootstrap raised in
+    the place of its state."""
     kw = _kwargs(calendar, engine, half_day_bias)
     if spreads_bp is None:
         spreads_bp = conventional_spreads_bp(state.quotes, state.discount, **kw)
     discounts = {0.0: state.discount}
-    out = []
+    out: list[MarketState | ValueError] = []
     for scenario in grid:
         if scenario.rate_shift_bp not in discounts:
             discounts[scenario.rate_shift_bp] = bumped_discount(state.discount, scenario.rate_shift_bp)
         shifted = replace(state, discount=discounts[scenario.rate_shift_bp])
-        out.append(scenario_state(shifted, replace(scenario, rate_shift_bp=0.0), spreads_bp=spreads_bp, **kw))
+        try:
+            out.append(scenario_state(shifted, replace(scenario, rate_shift_bp=0.0), spreads_bp=spreads_bp, **kw))
+        except ValueError as err:
+            out.append(err)
     return out
+
+
+def error_status(err: BaseException) -> str:
+    """The status written for a scenario that did not bootstrap: the class
+    of the error the bootstrap raised (BootstrapArbitrageError for a pillar
+    that needs a negative hazard, ValueError for one past the hazard cap),
+    read through the wrapper scenario_state adds."""
+    inner = err.__cause__ if err.__cause__ is not None else err
+    return type(inner).__name__
 
 
 def _check_states(state: MarketState, states: list[MarketState]) -> None:
@@ -301,33 +354,59 @@ def run(
     *,
     states: list[MarketState] | None = None,
     spreads_bp: tuple[float, ...] | None = None,
+    on_error: OnError = "skip",
     calendar: str = DEFAULT_CALENDAR,
     engine: Engine = "isda",
     half_day_bias: bool = True,
 ) -> pd.DataFrame:
     """One row per scenario, columns RUN_COLUMNS. states, if given, are the
-    grid's scenario states already built (scenario_states)."""
+    grid's scenario states already built (scenario_states), and every one
+    is priced. Otherwise the states are bootstrapped here and a scenario
+    that does not bootstrap is written with its error's class in status
+    and nan in RUN_VALUE_COLUMNS (on_error = "skip", the default) or
+    propagates (on_error = "raise")."""
+    if on_error not in ON_ERROR:
+        raise ValueError(f"unknown on_error {on_error!r}; expected one of {ON_ERROR}")
     kw = _kwargs(calendar, engine, half_day_bias)
+    if spreads_bp is None:
+        spreads_bp = conventional_spreads_bp(state.quotes, state.discount, **kw)
     if states is None:
-        states = scenario_states(state, grid, spreads_bp=spreads_bp, **kw)
-    if len(states) != len(grid):
-        raise ValueError(f"{len(states)} states for {len(grid)} scenarios")
-    valuation = revalue(state, trade, states, **kw)
-    mtm = _mtm_array(state, trade, valuation, kw)
+        built = _scenario_states_or_errors(state, grid, spreads_bp=spreads_bp, **kw)
+        if on_error == "raise":
+            for item in built:
+                if isinstance(item, Exception):
+                    raise item
+    else:
+        built = list(states)
+    if len(built) != len(grid):
+        raise ValueError(f"{len(built)} states for {len(grid)} scenarios")
+    priced = [k for k, item in enumerate(built) if not isinstance(item, Exception)]
+    valuation = revalue(state, trade, [built[k] for k in priced], **kw) if priced else None
+    mtm = _mtm_array(state, trade, valuation, kw) if priced else np.array([])
     base_mtm = price(state, trade, **kw).mtm
+    base_recovery = state.quotes.recovery
     rows = []
-    for scenario, s, k in zip(grid, states, range(len(grid))):
-        rows.append(
-            {
-                "scenario": scenario.name,
-                "spread_multiplier": scenario.spread_multiplier,
-                "recovery": s.recovery.R(0.0),
-                "rate_shift_bp": scenario.rate_shift_bp,
-                **{f"spread_{p.lower()}_bp": q.value for p, q in zip(PILLARS, s.quotes.quotes)},
-                "mtm": float(mtm[k]),
-                "pnl_full": float(mtm[k] - base_mtm),
-                "par_spread_bp": float(valuation.par_spread_bp[k]),
-                "clean_upfront_pct": float(PERCENT * valuation.clean_upfront[k]),
-            }
-        )
+    for k, (scenario, item) in enumerate(zip(grid, built)):
+        row = {
+            "scenario": scenario.name,
+            "status": STATUS_OK if not isinstance(item, Exception) else error_status(item),
+            "spread_multiplier": scenario.spread_multiplier,
+            "recovery": base_recovery if scenario.recovery is None else scenario.recovery,
+            "rate_shift_bp": scenario.rate_shift_bp,
+            **{f"spread_{p.lower()}_bp": s_i for p, s_i in zip(PILLARS, scenario_spreads_bp(scenario, spreads_bp))},
+            **{c: float("nan") for c in RUN_VALUE_COLUMNS},
+        }
+        if not isinstance(item, Exception):
+            j = priced.index(k)
+            row.update(
+                {
+                    "recovery": item.recovery.R(0.0),
+                    **{f"spread_{p.lower()}_bp": q.value for p, q in zip(PILLARS, item.quotes.quotes)},
+                    "mtm": float(mtm[j]),
+                    "pnl_full": float(mtm[j] - base_mtm),
+                    "par_spread_bp": float(valuation.par_spread_bp[j]),
+                    "clean_upfront_pct": float(PERCENT * valuation.clean_upfront[j]),
+                }
+            )
+        rows.append(row)
     return pd.DataFrame(rows, columns=list(RUN_COLUMNS))

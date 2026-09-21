@@ -577,7 +577,7 @@ def _chart_3_rows(result: BootstrapResult, discount, sens: Sensitivities | None 
     if sens is None:
         sens = sensitivities(state, trade, spreads_bp=spreads)
     grid = scenarios.sweep_grid()
-    full = scenarios.run(state, trade, grid, spreads_bp=spreads)
+    full = scenarios.run(state, trade, grid, spreads_bp=spreads, on_error="raise")  # a nan row would hide in the chart
     rep = sens.report
     cs01 = np.array([getattr(rep, f"cs01_{p.lower()}") for p in result.quotes.pillars])
     multipliers = np.array([sc.spread_multiplier for sc in grid])

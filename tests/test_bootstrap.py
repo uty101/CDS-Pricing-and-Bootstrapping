@@ -335,9 +335,6 @@ def test_table_1_is_current_and_has_the_fixed_columns(discount: DiscountCurve, c
     assert len(fresh) == len(CURVE_FILES) * len(PILLARS)
     committed = report.TABLES_DIR / "table_1_hazard_curves.csv"
     assert_output_current(tmp_path / "table_1_hazard_curves.csv", committed)
-    # The Markdown is rendered from the rounded frame at fewer decimals, so
-    # the two renderings agree as text once the CSVs agree numerically.
-    assert (tmp_path / "table_1_hazard_curves.md").read_text(encoding="utf-8") == committed.with_suffix(".md").read_text(encoding="utf-8")
     table = pd.read_csv(committed)
     assert set(table["method"]) == {"bootstrap", "upfront"}
     assert set(table.loc[table["curve"] == "distressed_arb", "method"]) == {"upfront"}
