@@ -51,6 +51,18 @@ form is first order in the step.
 
 Both engines return LegValues per unit notional at the valuation date; the
 pricer divides by P(t_settle) to state amounts at cash settlement.
+
+Scenario arrays (Section 9). leg_values takes an optional CurveArrays: the
+hazards of n scenarios on the survival curve's pillar times, shape
+(n, n_pillars), the discount factors of n scenarios on the discount curve's
+node times, shape (n, n_nodes), and n flat recoveries, shape (n,). The
+three base curves then supply only the node times and the merged grid,
+which every scenario shares; the arrays supply the values, and every field
+of the returned LegValues has shape (n,). The formulas are the ones above
+applied elementwise, with P and Q read by the same log-linear and
+piecewise-constant-hazard interpolation (df_rows, survival_rows) the curve
+classes use, so the scalar path is the n = 1 case to float precision
+(tests/test_scenarios.py, criterion 4).
 """
 
 from __future__ import annotations
@@ -67,12 +79,15 @@ from cds.types import DiscountCurve, RecoveryCurve, SurvivalCurve
 
 __all__ = [
     "ENGINES",
+    "CurveArrays",
     "Engine",
     "LegValues",
     "TAYLOR_THRESHOLD",
+    "df_rows",
     "dirty_par_spread_bp",
     "leg_values",
     "protection_start_date",
+    "survival_rows",
 ]
 
 Engine = Literal["isda", "grid"]
@@ -114,6 +129,61 @@ class LegValues:
     def annuity(self) -> float:
         """A = annuity_coupon + annuity_accrual, SPEC 6.2."""
         return self.annuity_coupon + self.annuity_accrual
+
+
+@dataclass(frozen=True)
+class CurveArrays:
+    """The curves of n scenarios on shared node times (Section 9).
+
+    hazards[k, i] is lambda_i of scenario k on the base survival curve's
+    pillar_times; node_dfs[k, j] is P at the base discount curve's
+    node_times[j] in scenario k; recoveries[k] is the flat R of scenario k.
+    """
+
+    hazards: np.ndarray
+    node_dfs: np.ndarray
+    recoveries: np.ndarray
+
+    def __post_init__(self) -> None:
+        hazards = np.atleast_2d(np.asarray(self.hazards, dtype=float))
+        node_dfs = np.atleast_2d(np.asarray(self.node_dfs, dtype=float))
+        recoveries = np.atleast_1d(np.asarray(self.recoveries, dtype=float))
+        n = len(recoveries)
+        if hazards.shape[0] != n or node_dfs.shape[0] != n:
+            raise ValueError(f"hazards {hazards.shape}, node_dfs {node_dfs.shape} and recoveries {recoveries.shape} disagree on the number of scenarios")
+        if np.any(hazards < 0) or np.any(node_dfs <= 0) or np.any((recoveries < 0) | (recoveries > 1)):
+            raise ValueError("hazards must be non-negative, discount factors positive and recoveries in [0, 1]")
+        object.__setattr__(self, "hazards", hazards)
+        object.__setattr__(self, "node_dfs", node_dfs)
+        object.__setattr__(self, "recoveries", recoveries)
+
+    @property
+    def n(self) -> int:
+        return len(self.recoveries)
+
+
+def df_rows(node_times: tuple[float, ...], node_dfs: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """P(t) for every row of node_dfs, shape (n, len(t)): ln P linear in t
+    between the nodes (0, 1) and (node_times, node_dfs), the last interval's
+    forward extrapolated flat, exactly as DiscountCurve.df reads one row."""
+    times = np.array((0.0, *node_times))
+    log_dfs = np.log(np.concatenate([np.ones((node_dfs.shape[0], 1)), node_dfs], axis=1))
+    t = np.atleast_1d(np.asarray(t, dtype=float))
+    idx = np.clip(np.searchsorted(times, t, side="right"), 1, len(times) - 1)
+    t0, t1 = times[idx - 1], times[idx]
+    w = (t - t0) / (t1 - t0)
+    return np.exp(log_dfs[:, idx - 1] + w * (log_dfs[:, idx] - log_dfs[:, idx - 1]))
+
+
+def survival_rows(pillar_times: tuple[float, ...], hazards: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """Q(t) for every row of hazards, shape (n, len(t)): lambda_i flat on
+    (t_{i-1}, t_i], the last hazard beyond the last pillar, exactly as
+    SurvivalCurve.Q reads one row."""
+    nodes = np.array((0.0, *pillar_times))
+    t = np.atleast_1d(np.asarray(t, dtype=float))
+    i = np.clip(np.searchsorted(nodes[1:], t, side="left"), 0, hazards.shape[1] - 1)
+    cum = np.concatenate([np.zeros((hazards.shape[0], 1)), np.cumsum(hazards * np.diff(nodes), axis=1)], axis=1)
+    return np.exp(-(cum[:, i] + hazards[:, i] * (t - nodes[i])))
 
 
 def dirty_par_spread_bp(values: LegValues) -> float:
@@ -173,6 +243,16 @@ def _coupon_on_survival(schedule: Schedule, as_of: date, discount: DiscountCurve
             continue
         total += frac * discount.df(year_fraction_act365f(as_of, pay)) * survival.Q(year_fraction_act365f(as_of, pay - ONE_DAY))
     return total
+
+
+def _coupon_on_survival_rows(schedule: Schedule, as_of: date, discount: DiscountCurve, survival: SurvivalCurve, arrays: CurveArrays) -> np.ndarray:
+    """The same sum for every scenario row, shape (n,)."""
+    paying = [(frac, pay) for frac, pay in zip(schedule.accrual_fraction, schedule.payment) if pay > as_of]
+    fracs = np.array([frac for frac, _ in paying])
+    t_pay = np.array([year_fraction_act365f(as_of, pay) for _, pay in paying])
+    t_obs = np.array([year_fraction_act365f(as_of, pay - ONE_DAY) for _, pay in paying])
+    terms = fracs * df_rows(discount.node_times, arrays.node_dfs, t_pay) * survival_rows(survival.pillar_times, arrays.hazards, t_obs)  # type: ignore[attr-defined]
+    return np.sum(terms, axis=1)
 
 
 def _grid_times(
@@ -242,14 +322,22 @@ def leg_values(
     half_day_bias: bool = True,
     engine: Engine = "isda",
     grid_days: int = 1,
+    arrays: CurveArrays | None = None,
 ) -> LegValues:
     """Both legs per unit notional at as_of. See the module docstring for
-    the formulas and the integration limits."""
+    the formulas and the integration limits. With arrays given, the curves
+    supply the node times and the grid and the arrays the values, and every
+    field of the result has shape (arrays.n,)."""
     if engine not in ENGINES:
         raise ValueError(f"unknown engine {engine!r}; expected one of {ENGINES}")
     _check_as_of(as_of, discount, survival, recovery)
     if schedule.maturity <= as_of:
         raise ValueError(f"maturity {schedule.maturity} is not after the valuation date {as_of}")
+    if arrays is not None:
+        if arrays.hazards.shape[1] != len(survival.pillar_times):
+            raise ValueError(f"hazards have {arrays.hazards.shape[1]} pillars; the survival curve has {len(survival.pillar_times)}")
+        if arrays.node_dfs.shape[1] != len(discount.node_times):  # type: ignore[attr-defined]
+            raise ValueError(f"node_dfs have {arrays.node_dfs.shape[1]} nodes; the discount curve has {len(discount.node_times)}")  # type: ignore[attr-defined]
 
     d_prot0 = protection_start_date(as_of, schedule.step_in)
     t_maturity = year_fraction_act365f(as_of, schedule.maturity)
@@ -257,15 +345,20 @@ def leg_values(
     times = _grid_times(as_of, d_prot0, t_maturity, periods, engine, discount, survival, grid_days)
 
     a, b = times[:-1], times[1:]
-    pa, pb = discount.df(a), discount.df(b)
-    qa, qb = survival.Q(a), survival.Q(b)
+    if arrays is None:
+        pa, pb = discount.df(a), discount.df(b)
+        qa, qb = survival.Q(a), survival.Q(b)
+    else:
+        pa, pb = df_rows(discount.node_times, arrays.node_dfs, a), df_rows(discount.node_times, arrays.node_dfs, b)  # type: ignore[attr-defined]
+        qa, qb = survival_rows(survival.pillar_times, arrays.hazards, a), survival_rows(survival.pillar_times, arrays.hazards, b)
     per_interval = _isda_intervals if engine == "isda" else _grid_intervals
     i_k, j_k = per_interval(a, b, pa, pb, qa, qb)
 
     # Protection: intervals up to T, with (1 - R) at each interval start.
     in_prot = b <= t_maturity
-    protection = float(np.sum(i_k[in_prot]))
-    pv_protection = float(np.sum((1.0 - np.asarray(recovery.R(a[in_prot]))) * i_k[in_prot]))
+    one_minus_r = 1.0 - (np.asarray(recovery.R(a[in_prot])) if arrays is None else arrays.recoveries[:, None])
+    protection = np.sum(i_k[..., in_prot], axis=-1)
+    pv_protection = np.sum(one_minus_r * i_k[..., in_prot], axis=-1)
 
     # Accrual on default: int (u - tstart) P (-dQ) = (a - tstart) * I + J per interval.
     accrual = 0.0
@@ -273,12 +366,19 @@ def leg_values(
         lo = np.searchsorted(times, p.t_start)
         hi = np.searchsorted(times, p.t_end)
         sel = slice(lo, hi)
-        accrual += float(np.sum((a[sel] - p.tstart) * i_k[sel] + j_k[sel]))
+        accrual += np.sum((a[sel] - p.tstart) * i_k[..., sel] + j_k[..., sel], axis=-1)
     accrual *= ACCRUAL_TIME_SCALE
 
+    if arrays is None:
+        return LegValues(
+            annuity_coupon=_coupon_on_survival(schedule, as_of, discount, survival),
+            annuity_accrual=float(accrual),
+            protection=float(protection),
+            pv_protection=float(pv_protection),
+        )
     return LegValues(
-        annuity_coupon=_coupon_on_survival(schedule, as_of, discount, survival),
-        annuity_accrual=accrual,
+        annuity_coupon=_coupon_on_survival_rows(schedule, as_of, discount, survival, arrays),
+        annuity_accrual=np.asarray(accrual, dtype=float),
         protection=protection,
         pv_protection=pv_protection,
     )

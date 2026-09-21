@@ -14,7 +14,8 @@ Table 1 lists every curve file; Chart 1 draws the three named curves (the
 arbitrage curve has no joint hazard curve to draw). Table 2 (the QuantLib
 comparison, Section 7), Table 5 (ISDA path against the textbook model) and
 Table 3 (the risk report, Section 8) cover the three named curves; Chart 2
-(recovery dependence) is on IG_flat.
+(recovery dependence), Table 4 (the P&L explain, Section 9, both files)
+and Chart 3 (P&L against the spread multiplier) are on IG_flat.
 """
 
 from __future__ import annotations
@@ -79,13 +80,29 @@ def make_chart_2(results: dict[str, BootstrapResult]) -> None:
     print(f"chart_2_recovery_dependence: {len(df)} rows -> {report.CHARTS_DIR}")
 
 
+def make_table_4(results: dict[str, BootstrapResult]) -> None:
+    """Both Table 4 files from one explain of the grid."""
+    result, discount = results[report.TABLE_4_CURVE], discount_curve_from_file(RATES_FILE)
+    rows = report.explain_grid(result, discount)
+    df = report.table_4_pnl_explain(result, discount, rows=rows)
+    full = report.table_4_pnl_explain_full(result, discount, rows=rows)
+    print(f"table_4_pnl_explain: {len(df)} rows, table_4_pnl_explain_full: {len(full)} rows -> {report.TABLES_DIR}")
+
+
+def make_chart_3(results: dict[str, BootstrapResult]) -> None:
+    df = report.chart_3_pnl_vs_spread_shock(results[report.CHART_3_CURVE], discount_curve_from_file(RATES_FILE))
+    print(f"chart_3_pnl_vs_spread_shock: {len(df)} rows -> {report.CHARTS_DIR}")
+
+
 OUTPUTS = {
     "table_1": make_table_1,
     "chart_1": make_chart_1,
     "table_2": make_table_2,
     "table_3": make_table_3,
+    "table_4": make_table_4,
     "table_5": make_table_5,
     "chart_2": make_chart_2,
+    "chart_3": make_chart_3,
 }
 
 

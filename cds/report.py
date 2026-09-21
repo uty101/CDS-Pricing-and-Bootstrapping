@@ -4,7 +4,8 @@ and returns the DataFrame it wrote. scripts/make_outputs.py runs them; the
 README embeds the files by path and computes nothing.
 
 Section 6 owns Table 1 and Chart 1, Section 7 Tables 2 and 5, Section 8
-Table 3 and Chart 2; later sections add their outputs here.
+Table 3 and Chart 2, Section 9 Table 4 and Chart 3; later sections add
+their outputs here.
 
 Table 1, outputs/tables/table_1_hazard_curves.csv (+ .md), one row per
 (curve, pillar): the quote as committed, the conventional spread the
@@ -56,6 +57,26 @@ file (chart_2_slopes; docs/CONVENTIONS_RESOLVED.md item 43). The data
 file chart_2_recovery_dependence.csv holds recovery,
 implied_5y_default_prob, mtm_par_trade, mtm_offmarket_trade,
 mtm_par_trade_hazard_fixed, mtm_offmarket_trade_hazard_fixed.
+
+Table 4, outputs/tables/table_4_pnl_explain.csv (+ .md): the P&L explain
+(cds.explain.explain) of the 5Y IG protection buy at the standard coupon
+for six scenarios of the Section 9 grid (TABLE_4_SCENARIOS: spreads x1.5,
+x3, recovery to 0.20, steepen, rates +100 bp, combined), columns scenario
+then every ExplainResult field in order. table_4_pnl_explain_full.csv
+(+ .md) has every scenario of cds.scenarios.standard_grid, same columns.
+Every scenario is one re-bootstrap; the sensitivities at t_0 are computed
+once (cds.explain.sensitivities) and shared. A residual_pct_of_total that
+is not a number (a scenario with no P&L) is written empty.
+
+Chart 3, outputs/charts/chart_3_pnl_vs_spread_shock.png (1600 x 900): the
+buyer's P&L of the same trade against the spread multiplier m from 0.5 to
+4 in 0.05 steps (cds.scenarios.sweep_grid, every pillar's conventional
+spread times m): the full revaluation (cds.scenarios.run), the first-order
+explain sum_i cs01_i Delta s_i, and first order plus the gamma term
+1/2 Gamma Delta s^2 with Gamma and Delta s as cds.explain defines them.
+The data file chart_3_pnl_vs_spread_shock.csv holds spread_multiplier,
+pnl_full, pnl_first_order, pnl_second_order (the last is first order plus
+gamma).
 """
 
 from __future__ import annotations
@@ -71,13 +92,14 @@ import pandas as pd
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402 - the backend must be chosen first
 
-from cds import textbook
+from cds import scenarios, textbook
 from cds.bootstrap import BootstrapResult, market_state, pillar_trade
 from cds.conventions import ACT365F_BASIS
+from cds.explain import Sensitivities, explain, sensitivities
 from cds.pricer import implied_flat_hazard, price
 from cds.risk import recovery_state, risk
 from cds.schedule import year_fraction_act365f
-from cds.types import CDSTrade, Quote, RiskReport
+from cds.types import CDSTrade, ExplainResult, Quote, RiskReport
 
 __all__ = [
     "CHART_1_COLUMNS",
@@ -85,6 +107,8 @@ __all__ = [
     "CHART_2_CURVE",
     "CHART_2_OFFMARKET_BP",
     "CHART_2_RECOVERIES",
+    "CHART_3_COLUMNS",
+    "CHART_3_CURVE",
     "CHARTS_DIR",
     "OUTPUT_DECIMALS",
     "STANDARD_COUPONS_BY_CURVE",
@@ -92,6 +116,9 @@ __all__ = [
     "TABLE_2_COLUMNS",
     "TABLE_3_COLUMNS",
     "TABLE_3_TENOR",
+    "TABLE_4_COLUMNS",
+    "TABLE_4_CURVE",
+    "TABLE_4_SCENARIOS",
     "TABLE_5_COLUMNS",
     "TABLE_5_COUPONS_BP",
     "TABLE_5_TENORS",
@@ -100,11 +127,16 @@ __all__ = [
     "chart_2_recovery_dependence",
     "chart_2_slopes",
     "chart_2_trades",
+    "chart_3_pnl_vs_spread_shock",
+    "explain_grid",
     "markdown_table",
     "rounded",
     "table_1_hazard_curves",
     "table_2_quantlib_validation",
     "table_3_risk_report",
+    "table_4_pnl_explain",
+    "table_4_pnl_explain_full",
+    "table_4_trade",
     "table_5_isda_vs_textbook",
     "trade_label",
     "write_table",
@@ -172,6 +204,17 @@ CHART_2_COLUMNS = (
 THOUSAND = 1e3
 BP_PER_UNIT = 1e4
 
+# Table 4 and Chart 3: the 5Y IG buy at the standard coupon; the six Table 4
+# scenarios by the names cds.scenarios gives them, the full table every
+# scenario of the standard grid. The columns after scenario are the
+# ExplainResult fields in their declared order.
+TABLE_4_CURVE = "IG_flat"
+CHART_3_CURVE = TABLE_4_CURVE
+TABLE_4_SCENARIOS = ("spread_x1.5", "spread_x3", "recovery_0.2", "steepen_35bp", "rates_+100bp", "combined")
+EXPLAIN_FIELDS = tuple(ExplainResult.__dataclass_fields__)
+TABLE_4_COLUMNS = ("scenario", *EXPLAIN_FIELDS)
+CHART_3_COLUMNS = ("spread_multiplier", "pnl_full", "pnl_first_order", "pnl_second_order")
+
 PERCENT = 100.0
 
 # Chart geometry: 1600 x 900 pixels (Part D.3).
@@ -212,6 +255,10 @@ MD_DECIMALS = {
     "mtm_offmarket_trade": 2,
     "mtm_par_trade_hazard_fixed": 2,
     "mtm_offmarket_trade_hazard_fixed": 2,
+    **{f: 2 for f in EXPLAIN_FIELDS},
+    "spread_multiplier": 2,
+    "pnl_first_order": 2,
+    "pnl_second_order": 2,
 }
 
 # Table 3's transposed Markdown: every measure is in currency.
@@ -475,6 +522,109 @@ def chart_2_recovery_dependence(result: BootstrapResult, discount, out_dir: Path
     fig.suptitle(f"Recovery dependence on {label}, valuation date {as_of} (dotted: the file's R = {base_r:.0%})", x=0.02, ha="left", color=INK, fontsize=15)
     fig.subplots_adjust(left=0.06, right=0.98, top=0.86, bottom=0.11, wspace=0.24)
     fig.savefig(out_dir / "chart_2_recovery_dependence.png", dpi=CHART_DPI, facecolor=SURFACE)
+    plt.close(fig)
+    return df
+
+
+def table_4_trade(result: BootstrapResult) -> CDSTrade:
+    """The Table 4 and Chart 3 trade: the 5Y buy at the curve's standard
+    coupon on DEFAULT_NOTIONAL, the curve's recovery."""
+    quotes = result.quotes
+    return pillar_trade(quotes, quotes.pillars.index(TABLE_3_TENOR), STANDARD_COUPONS_BY_CURVE[quotes.label])
+
+
+def explain_grid(result: BootstrapResult, discount, grid: tuple[scenarios.Scenario, ...] | None = None, sens: Sensitivities | None = None) -> pd.DataFrame:
+    """explain() of the Table 4 trade for every scenario of the grid (the
+    standard grid at the curve's recovery unless given), columns
+    TABLE_4_COLUMNS; the sensitivities at t_0 computed once unless given."""
+    state = market_state(result, discount)
+    trade = table_4_trade(result)
+    if grid is None:
+        grid = scenarios.standard_grid(result.quotes.recovery)
+    if sens is None:
+        sens = sensitivities(state, trade, spreads_bp=result.conventional_spreads_bp)
+    states = scenarios.scenario_states(state, grid, spreads_bp=result.conventional_spreads_bp)
+    rows = []
+    for scenario, s in zip(grid, states):
+        e = explain(state, s, trade, sensitivities_t0=sens)
+        rows.append({"scenario": scenario.name, **{f: getattr(e, f) for f in EXPLAIN_FIELDS}})
+    return pd.DataFrame(rows, columns=list(TABLE_4_COLUMNS))
+
+
+def table_4_pnl_explain(result: BootstrapResult, discount, out_dir: Path = TABLES_DIR, rows: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Table 4: the six TABLE_4_SCENARIOS rows of explain_grid (computed
+    unless rows, the full frame, is given), in that order."""
+    full = explain_grid(result, discount) if rows is None else rows
+    missing = [n for n in TABLE_4_SCENARIOS if n not in set(full["scenario"])]
+    if missing:
+        raise ValueError(f"the grid has no scenario named {missing}")
+    df = full.set_index("scenario").loc[list(TABLE_4_SCENARIOS)].reset_index()[list(TABLE_4_COLUMNS)]
+    write_table(df, out_dir / "table_4_pnl_explain")
+    return df
+
+
+def table_4_pnl_explain_full(result: BootstrapResult, discount, out_dir: Path = TABLES_DIR, rows: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Table 4, every scenario of the standard grid."""
+    df = explain_grid(result, discount) if rows is None else rows
+    write_table(df, out_dir / "table_4_pnl_explain_full")
+    return df
+
+
+def _chart_3_rows(result: BootstrapResult, discount, sens: Sensitivities | None = None) -> pd.DataFrame:
+    state = market_state(result, discount)
+    trade = table_4_trade(result)
+    spreads = result.conventional_spreads_bp
+    if sens is None:
+        sens = sensitivities(state, trade, spreads_bp=spreads)
+    grid = scenarios.sweep_grid()
+    full = scenarios.run(state, trade, grid, spreads_bp=spreads)
+    rep = sens.report
+    cs01 = np.array([getattr(rep, f"cs01_{p.lower()}") for p in result.quotes.pillars])
+    multipliers = np.array([sc.spread_multiplier for sc in grid])
+    ds = np.outer(multipliers - 1.0, np.array(spreads))  # Delta s_i per scenario, bp
+    first_order = ds @ cs01
+    second_order = first_order + 0.5 * sens.gamma * ds.mean(axis=1) ** 2
+    return pd.DataFrame(
+        {
+            "spread_multiplier": multipliers,
+            "pnl_full": full["pnl_full"].to_numpy(),
+            "pnl_first_order": first_order,
+            "pnl_second_order": second_order,
+        },
+        columns=list(CHART_3_COLUMNS),
+    )
+
+
+def chart_3_pnl_vs_spread_shock(result: BootstrapResult, discount, out_dir: Path = CHARTS_DIR, sens: Sensitivities | None = None) -> pd.DataFrame:
+    """Chart 3: the buyer's P&L against the spread multiplier, full
+    revaluation against first order and first order plus gamma; the data
+    written next to it."""
+    df = _chart_3_rows(result, discount, sens)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rounded(df).to_csv(out_dir / "chart_3_pnl_vs_spread_shock.csv", index=False, lineterminator="\n")
+    trade = table_4_trade(result)
+    label = result.quotes.label
+    m = df["spread_multiplier"].to_numpy()
+
+    fig, ax = plt.subplots(figsize=(CHART_SIZE_PX[0] / CHART_DPI, CHART_SIZE_PX[1] / CHART_DPI), dpi=CHART_DPI)
+    fig.patch.set_facecolor(SURFACE)
+    series = (
+        ("pnl_full", SERIES_COLOURS[0], "-", "full revaluation (one re-bootstrap per scenario)"),
+        ("pnl_first_order", SERIES_COLOURS[1], "--", "first order: Σ CS01_i · Δs_i"),
+        ("pnl_second_order", SERIES_COLOURS[2], "-.", "first order + ½ Γ Δs²"),
+    )
+    for col, colour, style, text in series:
+        ax.plot(m, df[col].to_numpy() / THOUSAND, color=colour, linewidth=2, linestyle=style, label=text)
+    _style_axis(ax, f"P&L of the 5Y protection buy on {label}, c = {trade.coupon_bp:g} bp, $10m notional", "P&L, $ thousand")
+    ax.set_xlabel("spread multiplier m (every pillar's conventional spread × m)", color=INK_SECONDARY, fontsize=10)
+    ax.set_xlim(m[0], m[-1])
+    ax.axhline(0.0, color=GRID, linewidth=1)
+    ax.axvline(1.0, color=INK_SECONDARY, linewidth=1, linestyle=":")
+    ax.legend(frameon=False, loc="upper left", fontsize=10, labelcolor=INK)
+    as_of = result.quotes.as_of.isoformat()
+    fig.suptitle(f"Full revaluation against the explain, valuation date {as_of} (dotted: m = 1, the base)", x=0.02, ha="left", color=INK, fontsize=15)
+    fig.subplots_adjust(left=0.07, right=0.98, top=0.86, bottom=0.11)
+    fig.savefig(out_dir / "chart_3_pnl_vs_spread_shock.png", dpi=CHART_DPI, facecolor=SURFACE)
     plt.close(fig)
     return df
 
