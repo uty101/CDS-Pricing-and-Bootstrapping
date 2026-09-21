@@ -65,9 +65,19 @@ Section 9, acceptance criterion 2 had the sign of spread convexity backwards. Th
 
 ## Resolved at the start of Section 8 (questions from review 07)
 
-(The Section 07 approval message was not in the Section 8 session prompt and issue 7 carries no comment, so items 35 to 38 below are written from the prompt's summary of it; the reviewer should replace the wording with the message's own if it differs.)
-
 35. Section 7 criterion 2 (review 07, Against the plan 1 and 3): restated as the matched-node comparison. Our sequential fit with the survival curve's nodes on QuantLib's dates (adjusted maturity + 1 day) against QuantLib's node hazards, |Δλ_i| ≤ 0.5 bp of hazard on every pillar of every curve; the on-our-grid rows (`trade = "bootstrap"`) stay in Table 2 as information, and Table 2 is kept exactly as committed in Section 7 (16 hazard rows per curve, the two distressed on-our-grid rows reading `False` against the 0.5 bp bar). BUILD_PLAN.md Section 7 criterion 2 is rewritten to say so.
 36. `SpreadCdsHelper(settlementDays = 1)` (Against the plan 2): accepted. In QuantLib 1.43 the helper's argument is the protection start (evaluation date + that many calendar days, our step-in); the swap it builds keeps `cashSettlementDays = 3`, our T+3.
 37. Against the plan 4 to 8 accepted as stated: the `pv_protection` (1 bp of notional) and `risky_annuity` (0.01 per unit spread, `QL_ANNUITY_ABS_TOL`) tolerances; `cs01_usd` as the only CS01 metric in Table 2 with the bp-of-notional numbers in the review; Table 5 at 100 bp on IG and 500 bp on HY and distressed; `OUTPUT_ABS_TOL` and `assert_output_current` in `tests/conftest.py` with the Markdown files compared as text; `rounded()` writing `0.0` for a `-0.0`.
 38. `assert_output_current` compares each float within max(`OUTPUT_ABS_TOL`, `OUTPUT_ABS_TOL` × |committed value|), i.e. 1e-9 absolute or 1e-9 relative, whichever is larger, so a column in currency (a CS01 or an MTM on $10m, written to 10 decimal places) is held to its last printed digits rather than to an absolute 1e-9 it cannot carry. Amends item 34; text columns are still compared exactly.
+
+## Resolved at the start of Section 9 (questions from review 08)
+
+39. Items 35 to 38 stand as committed; the bracketed note above them (saying they were written from the prompt's summary of the Section 07 approval) is removed.
+40. rec01 and IR01 hold the conventional spreads fixed and re-bootstrap, the same reading as CS01, on every curve including upfront-quoted ones (review 08, Against the plan 2).
+41. Section 8 criterion 5: IR01 on the IG 5Y par trade under $200; on the distressed 5Y upfront trade over $300 in absolute value; on the distressed 10Y over $500. `IR01_DISTRESSED_MIN_USD = 300` and a new `IR01_DISTRESSED_10Y_MIN_USD = 500` (Against the plan 3).
+42. The off-market trade is s_par + 200 bp on IG (290 bp) for criterion 2 and Chart 2; s_par − 200 bp on HY (300 bp) is the second test case. Chart 2's CSV keeps the 6 columns (Against the plan 4 and 5).
+43. Chart 2 panel (b) stays on one axis; each legend label ends with its slope in $ per recovery point, computed from the CSV (Against the plan 6).
+44. JTD uses the trade's unwind value, i.e. `price()` with `quote = None`, for every trade; the inception cash of an upfront-quoted trade is sunk (Against the plan 8).
+45. `OUTPUT_ABS_TOL = 1e-6`: `assert_output_current` compares within max(1e-6, 1e-6 × |committed|). Reason: difference columns (Table 2 diff, Table 3 cs01_2y) are differences of $10m-scale values and carry a 1e-9 noise floor across numpy builds regardless of their own size; nothing in the outputs is meaningful past 1e-6. Amends item 38.
+
+Items 39 to 45 are recorded here; the code changes for 43, 44 and 45 are applied in the Section 09 pre-step.
