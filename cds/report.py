@@ -49,10 +49,13 @@ conventional spreads held fixed and the curve re-bootstrapped at each R;
 at the file's recovery) and of the running-spread trade struck 200 bp
 above it, each drawn twice: re-bootstrapped at each R (the desk number,
 flat for the par trade) and with the hazard curve held at the file's
-recovery (the slope -I N, the same for both). The data file
-chart_2_recovery_dependence.csv holds recovery, implied_5y_default_prob,
-mtm_par_trade, mtm_offmarket_trade, mtm_par_trade_hazard_fixed,
-mtm_offmarket_trade_hazard_fixed.
+recovery (the slope -I N, the same for both). Each legend label of panel
+(b) ends with the line's slope in $ per recovery point, the least-squares
+slope of the column against R in points over the 51 rows of the data
+file (chart_2_slopes; docs/CONVENTIONS_RESOLVED.md item 43). The data
+file chart_2_recovery_dependence.csv holds recovery,
+implied_5y_default_prob, mtm_par_trade, mtm_offmarket_trade,
+mtm_par_trade_hazard_fixed, mtm_offmarket_trade_hazard_fixed.
 """
 
 from __future__ import annotations
@@ -95,6 +98,7 @@ __all__ = [
     "TABLES_DIR",
     "chart_1_survival_hazard",
     "chart_2_recovery_dependence",
+    "chart_2_slopes",
     "chart_2_trades",
     "markdown_table",
     "rounded",
@@ -426,15 +430,26 @@ def _chart_2_rows(result: BootstrapResult, discount) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=list(CHART_2_COLUMNS))
 
 
+def chart_2_slopes(df: pd.DataFrame) -> dict[str, float]:
+    """The slope of each MTM column of the Chart 2 data in $ per recovery
+    point: the least-squares slope against 100 R over every row. Exact for
+    the hazard-fixed lines, which are linear in R; the fit over the range
+    for the re-bootstrapped ones."""
+    r_points = PERCENT * df["recovery"].to_numpy(dtype=float)
+    return {col: float(np.polyfit(r_points, df[col].to_numpy(dtype=float), 1)[0]) for col in CHART_2_COLUMNS[2:]}
+
+
 def chart_2_recovery_dependence(result: BootstrapResult, discount, out_dir: Path = CHARTS_DIR) -> pd.DataFrame:
     """Chart 2: implied 5Y default probability and the two trades' MTM
-    against recovery on the given (IG) curve; the data written next to it."""
+    against recovery on the given (IG) curve; the data written next to it.
+    Panel (b)'s legend labels end with each line's slope from the data."""
     df = _chart_2_rows(result, discount)
     out_dir.mkdir(parents=True, exist_ok=True)
     rounded(df).to_csv(out_dir / "chart_2_recovery_dependence.csv", index=False, lineterminator="\n")
     par, offmarket = chart_2_trades(result, discount)
     base_r = result.quotes.recovery
     label = result.quotes.label
+    slopes = chart_2_slopes(rounded(df))
 
     fig, (ax_pd, ax_mtm) = plt.subplots(1, 2, figsize=(CHART_SIZE_PX[0] / CHART_DPI, CHART_SIZE_PX[1] / CHART_DPI), dpi=CHART_DPI)
     fig.patch.set_facecolor(SURFACE)
@@ -447,7 +462,7 @@ def chart_2_recovery_dependence(result: BootstrapResult, discount, out_dir: Path
         ("mtm_offmarket_trade_hazard_fixed", SERIES_COLOURS[1], "--", f"off-market trade, c = {offmarket.coupon_bp:g} bp, hazard fixed"),
     )
     for col, colour, style, text in series:
-        ax_mtm.plot(r_pct, df[col].to_numpy() / THOUSAND, color=colour, linewidth=2, linestyle=style, label=text)
+        ax_mtm.plot(r_pct, df[col].to_numpy() / THOUSAND, color=colour, linewidth=2, linestyle=style, label=f"{text}: {slopes[col]:+,.0f} $/pt")
     _style_axis(ax_pd, "(a) Implied 5Y default probability 1 − Q(5Y)", "1 − Q(5Y), %")
     _style_axis(ax_mtm, "(b) MTM of the 5Y protection buy, $10m notional", "MTM, $ thousand")
     for ax in (ax_pd, ax_mtm):

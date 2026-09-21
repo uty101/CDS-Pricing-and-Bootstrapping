@@ -53,12 +53,15 @@ The discount curve must carry its inputs (a DiscountCurve from
 bootstrap_ois does; a calendar-shifted one does not).
 
 JTD. Part C item 2: for the protection buyer (1 - R) N - mtm - accrued,
-where mtm is the buyer's dirty mtm and accrued is the coupon accrued from
-the start of the period containing the valuation date to the valuation
-date itself, c N days / 360, paid on default under accrual on default
-(item 29 counts the pricer's accrued to as_of + 1; this one stops at
-as_of). The seller's number is the negative. R is the trade's assumed
-recovery.
+where mtm is the buyer's dirty unwind value (price() with quote = None,
+docs/CONVENTIONS_RESOLVED.md item 44: the inception cash of an
+upfront-quoted trade is sunk, so the loss on default is measured against
+the trade's current mark, not against the value net of what was paid at
+inception) and accrued is the coupon accrued from the start of the period
+containing the valuation date to the valuation date itself, c N days /
+360, paid on default under accrual on default (item 29 counts the
+pricer's accrued to as_of + 1; this one stops at as_of). The seller's
+number is the negative. R is the trade's assumed recovery.
 
 Theta. Part B item 7: the change in the side's dirty mtm from t_0 to t_1
 plus the coupon cash the side paid (buyer, negative) or received (seller,
@@ -298,12 +301,22 @@ def accrued_to_valuation_date(schedule: Schedule, as_of: date) -> int:
 
 def jtd(state: MarketState, trade: CDSTrade, *, calendar: str = DEFAULT_CALENDAR, engine: Engine = "isda", half_day_bias: bool = True) -> float:
     """Part C item 2: side * ((1 - R) N - accrued to as_of) - mtm, i.e. for
-    the buyer (1 - R) N - mtm - accrued and for the seller the negative."""
+    the buyer (1 - R) N - mtm - accrued and for the seller the negative.
+
+    mtm is the trade's unwind value, price() with quote = None, for every
+    trade (item 44). PriceResult.mtm of an upfront_pct-quoted trade is net
+    of the inception cash (item 25), but that cash was paid on the trade's
+    own settlement date and is sunk: on default the buyer receives
+    (1 - R) N and gives up a contract worth its current mark, so the P&L
+    against the mark is what JTD measures, and it does not move when the
+    inception cash does. For quote = None and par_spread_bp trades the two
+    values coincide."""
     kw = _kwargs(calendar, engine, half_day_bias)
     schedule = cds_schedule(trade.trade_date, trade.maturity, calendar)
     days = accrued_to_valuation_date(schedule, state.as_of)
     accrued = trade.coupon_bp / BP_PER_UNIT * trade.notional * days / ACT360_BASIS
-    return SIDE_SIGN[trade.side] * ((1.0 - trade.recovery) * trade.notional - accrued) - _mtm(state, trade, kw)
+    unwind = _mtm(state, replace(trade, quote=None), kw)
+    return SIDE_SIGN[trade.side] * ((1.0 - trade.recovery) * trade.notional - accrued) - unwind
 
 
 def coupon_cash_in_window(trade: CDSTrade, schedule: Schedule, t0: date, t1: date) -> float:

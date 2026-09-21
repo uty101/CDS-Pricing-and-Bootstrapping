@@ -890,8 +890,14 @@ trade; the coupon paid in the window, if any, is added with the side's sign.
    1 month.
 4. `jtd` for the buyer equals (1 − R)·N − mtm − accrued_since_period_start
    to $0.01, and the seller's is the negative.
-5. `ir01` on the IG par trade is under $200 in absolute value and on the
-   distressed upfront trade over $500 (the review records both).
+5. `ir01` on the IG 5Y par trade is under $200 in absolute value
+   (`IR01_IG_MAX_USD`); on the distressed 5Y upfront trade over $300
+   (`IR01_DISTRESSED_MIN_USD`) and on the distressed 10Y over $500
+   (`IR01_DISTRESSED_10Y_MIN_USD`), both in absolute value (the review
+   records all three). Rewritten from "over $500" on the 5Y trade in
+   docs/CONVENTIONS_RESOLVED.md item 41: the 5Y trade's $1.94m receivable
+   has about two years of duration, so a 1 bp parallel OIS bump moves it
+   by $399.
 6. Central CS01 differs from one-sided by under 1% per pillar on IG.
 
 **Tests.** `tests/test_risk.py`.

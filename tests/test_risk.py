@@ -46,8 +46,8 @@ from tests.conftest import (
     CS01_CENTRAL_ABS_USD,
     CS01_CENTRAL_REL_TOL,
     CS01_SUM_REL_TOL,
+    IR01_DISTRESSED_10Y_MIN_USD,
     IR01_DISTRESSED_MIN_USD,
-    IR01_DISTRESSED_PINNED_BAND,
     IR01_IG_MAX_USD,
     JTD_ABS_USD,
     PRICER_IDENTITY_ABS_TOL,
@@ -263,6 +263,27 @@ def test_jtd_is_loss_given_default_less_mtm_less_accrued(results: dict[str, Boot
     assert abs(jtd(state, sell) + reports[label].jtd) <= JTD_ABS_USD
 
 
+def test_jtd_uses_the_unwind_value_so_the_inception_cash_of_an_upfront_trade_is_sunk(results: dict[str, BootstrapResult], discount: DiscountCurve) -> None:
+    """Item 44: the distressed 5Y buy at coupon 500, quoted as an upfront,
+    valued a month after its trade date on the calendar-shifted curves.
+    Two inception upfronts 5 points apart move PriceResult.mtm by 5% of
+    notional and JTD by nothing; both JTDs equal the quote = None number."""
+    r = results["distressed_inverted"]
+    as_of = add_calendar_months(r.quotes.as_of, 1)
+    state = shifted_state(market_state(r, discount), as_of, "calendar")
+    unquoted = _five_year(r, 500.0)
+    paid_20 = replace(unquoted, quote=Quote(kind="upfront_pct", value=20.0, coupon_bp=500.0))
+    paid_25 = replace(unquoted, quote=Quote(kind="upfront_pct", value=25.0, coupon_bp=500.0))
+    mtm_20, mtm_25 = price(state, paid_20).mtm, price(state, paid_25).mtm
+    assert mtm_20 - mtm_25 == pytest.approx(0.05 * DEFAULT_NOTIONAL)  # the inception cash differs by 5 points
+    assert jtd(state, paid_20) == pytest.approx(jtd(state, paid_25), abs=JTD_ABS_USD)
+    assert jtd(state, paid_20) == pytest.approx(jtd(state, unquoted), abs=JTD_ABS_USD)
+    schedule = cds_schedule(unquoted.trade_date, unquoted.maturity)
+    accrued = 500.0 / BP_PER_UNIT * DEFAULT_NOTIONAL * accrued_to_valuation_date(schedule, as_of) / ACT360_BASIS
+    assert jtd(state, paid_20) == pytest.approx((1.0 - unquoted.recovery) * DEFAULT_NOTIONAL - price(state, unquoted).mtm - accrued, abs=JTD_ABS_USD)
+    assert jtd(state, replace(paid_20, side="sell")) == pytest.approx(-jtd(state, paid_20), abs=JTD_ABS_USD)
+
+
 def test_accrued_to_valuation_date_stops_at_as_of_where_the_pricer_goes_one_day_on(results: dict[str, BootstrapResult]) -> None:
     trade = _five_year(results["IG_flat"], 100.0)
     schedule = cds_schedule(trade.trade_date, trade.maturity)
@@ -275,15 +296,19 @@ def test_accrued_to_valuation_date_stops_at_as_of_where_the_pricer_goes_one_day_
 # --- criterion 5: IR01 ----------------------------------------------------------------
 
 
-def test_ir01_small_on_the_ig_par_trade_and_larger_on_the_distressed_upfront_trade(reports: dict[str, RiskReport]) -> None:
+def test_ir01_small_on_the_ig_par_trade_and_larger_on_the_distressed_upfront_trades(results: dict[str, BootstrapResult], discount: DiscountCurve, reports: dict[str, RiskReport]) -> None:
+    """Criterion 5 as rewritten (item 41): under $200 on the IG 5Y par
+    trade, over $300 on the distressed 5Y upfront trade, over $500 on the
+    distressed 10Y."""
     ig, distressed = reports["IG_flat"].ir01, reports["distressed_inverted"].ir01
     assert abs(ig) < IR01_IG_MAX_USD
-    assert abs(distressed) > IR01_IG_MAX_USD
-    # The plan's bar of $500 is not met: the number is -$399 (review 08,
-    # Against the plan); pinned here until the reviewer sets the bar.
-    lo, hi = IR01_DISTRESSED_PINNED_BAND
-    assert hi == IR01_DISTRESSED_MIN_USD and lo < abs(distressed) < hi
+    assert abs(distressed) > IR01_DISTRESSED_MIN_USD
     assert distressed < 0.0  # the buyer holds a $1.94m receivable; higher rates discount it more
+    r = results["distressed_inverted"]
+    ten_year = replace(pillar_trade(r.quotes, r.quotes.pillars.index("10Y"), 500.0), side="buy")
+    distressed_10y = ir01(market_state(r, discount), ten_year, spreads_bp=r.conventional_spreads_bp)
+    assert abs(distressed_10y) > IR01_DISTRESSED_10Y_MIN_USD
+    assert distressed_10y < distressed < 0.0  # the longer receivable has the larger duration
 
 
 def test_ir01_rebuilds_the_discount_curve_from_its_par_rates(results: dict[str, BootstrapResult], discount: DiscountCurve) -> None:
@@ -446,6 +471,13 @@ def test_chart_2_is_current_1600_by_900_and_shows_the_rec01_point(results: dict[
     # At the file's R the two readings meet.
     assert base.loc[0.40, "mtm_par_trade"] == pytest.approx(base.loc[0.40, "mtm_par_trade_hazard_fixed"])
     assert par.coupon_bp == pytest.approx(90.0) and off.coupon_bp == pytest.approx(90.0 + report.CHART_2_OFFMARKET_BP)
+    # Item 43: the legend slopes come from the CSV; the hazard-fixed lines are linear, so the fit is the 1-point step.
+    slopes = report.chart_2_slopes(pd.read_csv(committed))
+    assert set(slopes) == set(report.CHART_2_COLUMNS[2:])
+    assert slopes["mtm_par_trade_hazard_fixed"] == pytest.approx(step, rel=REC01_HAZARD_FIXED_REL_TOL)
+    assert slopes["mtm_offmarket_trade_hazard_fixed"] == pytest.approx(step, rel=REC01_HAZARD_FIXED_REL_TOL)
+    assert abs(slopes["mtm_par_trade"]) < CHART_2_PAR_FLAT_USD
+    assert slopes["mtm_offmarket_trade"] > 0.0
 
 
 def test_make_outputs_knows_table_3_and_chart_2() -> None:
