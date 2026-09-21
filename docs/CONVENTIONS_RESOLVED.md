@@ -81,3 +81,15 @@ Section 9, acceptance criterion 2 had the sign of spread convexity backwards. Th
 45. `OUTPUT_ABS_TOL = 1e-6`: `assert_output_current` compares within max(1e-6, 1e-6 × |committed|). Reason: difference columns (Table 2 diff, Table 3 cs01_2y) are differences of $10m-scale values and carry a 1e-9 noise floor across numpy builds regardless of their own size; nothing in the outputs is meaningful past 1e-6. Amends item 38.
 
 Items 39 to 45 are recorded here; the code changes for 43, 44 and 45 are applied in the Section 09 pre-step.
+
+## Resolved at the start of Section 10 (questions from review 09)
+
+46. `leg_values` keeps its scalar path; the array path is a second branch tested equal at n = 1 (review 09, Against the plan 1).
+47. Γ = V(s+1) − 2V(s) + V(s−1) per bp², the second derivative, negative for the buyer; the Section 09 prompt's sign was wrong (Against the plan 2).
+48. Recovery scenarios are R × 0.5 and R × 0.25 of the curve's recovery (Against the plan 3).
+49. Section 9 criterion 5 is restated: on HY ×3, first order alone leaves a residual over 5% of pnl_full, and adding the gamma term removes at least half of that residual. Δs in the gamma and cross terms stays the average of the 8 pillar moves. `EXPLAIN_X3_RESIDUAL_MIN_PCT = 5` applies to the first-order residual; the pinned band is removed (Against the plan 4 and 6).
+50. `run()` takes `on_error = "raise" | "skip"`, default `"skip"` for `standard_grid` and `sweep_grid`: a scenario whose bootstrap raises is written with `status` = the error class and `nan` in the value columns; `status = "ok"` otherwise. The tests assert HY and distressed `spread_x4` read `BootstrapArbitrageError` or the hazard-cap error (Against the plan 5).
+51. `run()` columns, `nan` percentages under $0.01, `rates_move_bp` on a par-rate-free curve, `explain` valuing at the t_1 recovery, `make_outputs.py` edits (Against the plan 7 to 11). Accepted.
+52. Output comparisons in tests: every check of an output against a regeneration, or of one output against another (Chart 3's ×3 row against Table 4, Table 3's 5Y CS01 against Table 2, and any future pair), uses `assert_output_current`'s rule, max(`OUTPUT_ABS_TOL`, `OUTPUT_ABS_TOL` × |committed|), never `pytest.approx` with a bare absolute or a text comparison. Markdown files are never compared; they are rendered from the CSVs that are. Reason: the Chart 3 cross-check misses by 6e-6 on a $720k value and Table 2's Markdown differs by a rounding-boundary flip on another numpy build.
+
+Items 46 to 52 are recorded here; the code changes for 49, 50 and 52 are applied in the Section 10 pre-step.
