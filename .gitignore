@@ -8,3 +8,6 @@ build/
 dist/
 .DS_Store
 Thumbs.db
+
+# A second copy of the spec docx left at the repo root; the one referenced is docs/11_CDS_Pricing_Bootstrap.docx (Section 10).
+/11_CDS_Pricing_Bootstrap.docx

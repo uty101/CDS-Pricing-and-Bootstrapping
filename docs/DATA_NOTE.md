@@ -114,15 +114,30 @@ Section 2 snapshot: `data/rates/sofr_ois_2026-09-15.json`, rates for
   on a weekend-only calendar. The sources' own conventions are close to but
   not stated as exactly this; the file's `note` says so.
 
-## Sourced: historical cumulative default rates (`data/defaults/`, Section 10)
+## Sourced: historical cumulative default rates (Section 10)
 
-The 5Y cumulative default rate by rating bucket from one public annual
-default study (Moody's "Annual Default Study" or S&P "Annual Global
-Corporate Default And Rating Transition Study"), typed into a small CSV with
-the study's name, year and exhibit number. Used once, for the sanity check of
-implied against historical 5Y default probability in the README.
+One figure from one public annual default study, used once, for the sanity
+check of implied against historical 5Y default probability in the README.
+No data file: the number is quoted in the README with its source, and the
+study itself is not committed (it is S&P's copyright).
 
-_Section 10 fills in:_ study ____, year ____, exhibit ____.
+- Study: S&P Global Ratings, *Default, Transition, and Recovery: 2020 Annual
+  Global Corporate Default And Rating Transition Study*, published 7 April
+  2021 (the 2024 and 2025 editions on spglobal.com returned HTTP 403 to the
+  session that wrote this; the 2020 edition was read from the copy at
+  `https://www.allnews.ch/ckfinder/userfiles/files/20210412_SP_2020_Annual_Global_Corporate_Default_Study_April_2021.pdf`,
+  pages 56 to 58, on 22 September 2026).
+- Exhibit: Table 24, "Global Corporate Average Cumulative Default Rates
+  (1981-2020) (%)", the five-year column: AAA 0.34, AA 0.30, A 0.46,
+  **BBB 1.54**, BB 6.43, B 17.35, CCC/C 48.58, investment grade 0.86,
+  speculative grade 14.64, all rated 6.25. Issuer-weighted, conditional on
+  survival, global corporates.
+- Used: BBB 1.54% against the IG curve's implied 7.13% (Chart 2 CSV, R =
+  0.40). The B and CCC/C figures are recorded here for a reader who wants
+  to set the HY (28.85%) and distressed (46.89%) curves' Table 1
+  `cum_default_prob` against them; the README does not, because the
+  illustrative HY and distressed levels were not chosen to match a rating
+  bucket.
 
 ## Generated: holiday calendar (`data/calendars/`, Section 1)
 
