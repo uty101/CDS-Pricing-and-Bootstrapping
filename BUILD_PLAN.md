@@ -1001,30 +1001,36 @@ example, a sanity check of implied 5Y default probability against a public
 cumulative default table, and a one-page results HTML generated from the
 outputs. Nothing is recomputed in the README.
 
-**Files.** `README.md` (rewritten), `scripts/basis_example.py`,
-`scripts/implied_vs_historical.py`, `scripts/build_results_page.py`,
-`data/defaults/cumulative_default_rates.csv`, `data/defaults/README.md`,
+**Files.** `README.md` (rewritten), `scripts/make_results.py`,
 `docs/DATA_NOTE.md` (default table source recorded),
-`outputs/tables/table_6_basis_example.{csv,md}`,
-`outputs/tables/table_7_implied_vs_historical.{csv,md}`,
-`outputs/results.html`, `tests/test_readme_paths.py`.
+`outputs/results.html`, `tests/test_readme_paths.py`, `cds/__init__.py`
+(module docstring), `.gitignore`.
+
+_As built (docs/CONVENTIONS_RESOLVED.md item 53): the basis note and the
+default-study check are prose in the README, the worked example off Table 1
+and the historical figure cited in the text with its source in
+`docs/DATA_NOTE.md`. `scripts/basis_example.py`,
+`scripts/implied_vs_historical.py`, `data/defaults/` and Tables 6 and 7
+were not created; `scripts/build_results_page.py` is `scripts/make_results.py`,
+which also syncs the README's table blocks from the committed `.md` files._
 
 **Rules implemented.**
-- Basis: for a hypothetical 5Y bond of the IG name priced to a Z-spread z
-  (typed into the script with the price, coupon and the Section 2 curve),
-  basis = CDS 5Y par spread − z, one worked row with the sign of the basis
-  and one sentence each on the three usual reasons for a persistent basis
-  (funding, cheapest-to-deliver, and the difference between par spread
-  and a fixed-coupon contract's running cost).
-- Implied versus historical: 1 − Q(5) from each curve against the 5Y
-  cumulative default rate of the matching bucket in a public Moody's or S&P
-  annual default study (IG_flat ↔ Baa/BBB, HY_steep ↔ B, distressed ↔
-  Caa-C/CCC), with the ratio and one sentence on why risk-neutral exceeds
-  historical.
-- `build_results_page.py` reads every `outputs/tables/*.md` and
+- Basis: one paragraph on the definition (basis = CDS 5Y par spread − z,
+  z the bond's Z-spread) and one worked example in prose, the IG 5Y par
+  spread from Table 1 against an assumed Z-spread, with the sign of the
+  basis and the three usual drivers named (funding, cheapest-to-deliver,
+  and the difference between par spread and a fixed-coupon contract's
+  running cost). No script, no table (item 53).
+- Implied versus historical: the IG curve's 1 − Q(5) (Chart 2 CSV at R =
+  0.40) against the BBB five-year cumulative default rate of a published
+  S&P or Moody's annual default study, cited by name, year and exhibit, in
+  two sentences that state the risk-neutral against real-world gap without
+  explaining it away. HY and distressed are not compared (item 53).
+- `scripts/make_results.py` reads every `outputs/tables/*.md` and
   `outputs/charts/*.png` and writes a single self-contained
-  `outputs/results.html` (images embedded as data URIs) in the same
-  generated-from-outputs pattern as project 1's `reports/results.md`.
+  `outputs/results.html` (images embedded as data URIs, no JavaScript, no
+  external request) in the README's section order, and syncs the README's
+  marked table blocks from the same `.md` files.
 
 **Acceptance criteria.**
 1. Every path the README references exists (`tests/test_readme_paths.py`
@@ -1037,10 +1043,8 @@ outputs. Nothing is recomputed in the README.
 
 **Tests.** `tests/test_readme_paths.py`.
 
-**Outputs.** Table 6 `table_6_basis_example.csv`: `bond, price, coupon_pct,
-maturity, z_spread_bp, cds_5y_par_spread_bp, basis_bp`. Table 7
-`table_7_implied_vs_historical.csv`: `curve, rating_bucket, implied_5y_pd_pct,
-historical_5y_pd_pct, ratio, source`. `outputs/results.html`.
+**Outputs.** `outputs/results.html`. (Tables 6 and 7 were planned here and
+not created: item 53.)
 
 ---
 

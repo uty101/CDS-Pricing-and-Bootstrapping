@@ -63,6 +63,7 @@ from cds.types import CDSTrade, DiscountCurve, MarketCurveQuotes, MarketState, Q
 __all__ = [
     "FALLBACKS",
     "BootstrapArbitrageError",
+    "HazardCapError",
     "BootstrapResult",
     "Fallback",
     "Method",
@@ -91,6 +92,21 @@ CURVE_FILE_KEYS = (
     "source",
     "note",
 )
+
+
+class HazardCapError(ValueError):
+    """Raised at the first pillar whose conventional spread is above what the
+    largest hazard the solver brackets (HAZARD_BOUNDS[1], 500% a year)
+    reaches: the objective is still negative at the cap, so there is no
+    root in the bracket. pillar is the label ("10Y"), index its 0-based
+    position, spread_bp the conventional spread, cap the hazard bound."""
+
+    def __init__(self, pillar: str, spread_bp: float, cap: float, index: int) -> None:
+        self.pillar = pillar
+        self.spread_bp = spread_bp
+        self.cap = cap
+        self.index = index
+        super().__init__(f"pillar {pillar} at {spread_bp:.4f} bp is above what a hazard of {cap} reaches")
 
 
 class BootstrapArbitrageError(ValueError):
@@ -218,7 +234,7 @@ def _sequential(
         if f0 >= 0.0:
             raise BootstrapArbitrageError(pillar, s_i, f0, i)
         if objective(hi) < 0.0:
-            raise ValueError(f"pillar {pillar} at {s_i:.4f} bp is above what a hazard of {hi} reaches")
+            raise HazardCapError(pillar, s_i, hi, i)
         hazards.append(float(brentq(objective, lo, hi, xtol=HAZARD_XTOL)))
     return hazards
 

@@ -296,7 +296,7 @@ def _scenario_states_or_errors(
 def error_status(err: BaseException) -> str:
     """The status written for a scenario that did not bootstrap: the class
     of the error the bootstrap raised (BootstrapArbitrageError for a pillar
-    that needs a negative hazard, ValueError for one past the hazard cap),
+    that needs a negative hazard, HazardCapError for one past the cap),
     read through the wrapper scenario_state adds."""
     inner = err.__cause__ if err.__cause__ is not None else err
     return type(inner).__name__

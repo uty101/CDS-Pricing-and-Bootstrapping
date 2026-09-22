@@ -61,11 +61,11 @@ RANDOM_SEED = 20260921
 N_RANDOM = 5
 
 # The x4 spread scenario does not bootstrap on HY (the 10Y pillar at 2400
-# bp needs a forward hazard above the 500% bound: the hazard-cap ValueError)
+# bp needs a forward hazard above the 500% bound: HazardCapError, item 55)
 # or on distressed (the 5Y pillar at 4800 bp needs a negative hazard:
 # BootstrapArbitrageError); review 09 records both. run() writes the row
 # with the error's class as its status (item 50).
-FAILING = {"HY_steep": {"spread_x4": "ValueError"}, "distressed_inverted": {"spread_x4": "BootstrapArbitrageError"}}
+FAILING = {"HY_steep": {"spread_x4": "HazardCapError"}, "distressed_inverted": {"spread_x4": "BootstrapArbitrageError"}}
 
 
 @pytest.fixture(scope="module")

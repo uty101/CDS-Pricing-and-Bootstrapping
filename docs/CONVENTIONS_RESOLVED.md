@@ -93,3 +93,9 @@ Items 39 to 45 are recorded here; the code changes for 43, 44 and 45 are applied
 52. Output comparisons in tests: every check of an output against a regeneration, or of one output against another (Chart 3's ×3 row against Table 4, Table 3's 5Y CS01 against Table 2, and any future pair), uses `assert_output_current`'s rule, max(`OUTPUT_ABS_TOL`, `OUTPUT_ABS_TOL` × |committed|), never `pytest.approx` with a bare absolute or a text comparison. Markdown files are never compared; they are rendered from the CSVs that are. Reason: the Chart 3 cross-check misses by 6e-6 on a $720k value and Table 2's Markdown differs by a rounding-boundary flip on another numpy build.
 
 Items 46 to 52 are recorded here; the code changes for 49, 50 and 52 are applied in the Section 10 pre-step.
+
+## Resolved at the close of Section 10 (questions from review 10)
+
+53. The basis note and the default-study check stay in prose in the README; `scripts/basis_example.py`, `scripts/implied_vs_historical.py`, `data/defaults/` and Tables 6 and 7 are not created (review 10, Against the plan 1). BUILD_PLAN.md Section 10 is edited to say so.
+54. `scripts/make_results.py` with `sync_readme`, the tests in `tests/test_readme_paths.py`, Table 1 and Chart 1 in the basis and default-study sections, `status` second in `RUN_COLUMNS`, the 2020 S&P edition with its caveat (Against the plan 2 to 5, 7, 8). Accepted.
+55. `HazardCapError(ValueError)` in `cds/bootstrap.py` for the hazard-cap failure; `error_status` reports it by name; the grid test asserts HY `spread_x4` reads `HazardCapError` (Against the plan 6).

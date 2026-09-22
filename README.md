@@ -108,14 +108,15 @@ uv run python scripts/make_outputs.py && uv run python scripts/make_results.py  
 ```
 
 Everything under [outputs/](outputs/) is committed and is what this page
-shows; [outputs/results.html](outputs/results.html) has the same tables and
-charts on one page that opens offline.
+shows; [outputs/results.html](outputs/results.html) has the same on one
+page that opens offline.
 
 ## Four findings
 
 **1. Recovery sensitivity depends on what is held fixed.** In Table 3 the row
 `rec01` (spreads held fixed, curve re-bootstrapped at R + 1 point) is tens of
-dollars on the IG par trade while `rec01_hazard_fixed` (hazards held fixed) is
+dollars on the IG trade, which sits 10 bp off par, and zero on the HY trade,
+which is at par, while `rec01_hazard_fixed` (hazards held fixed) is
 thousands with the opposite sign. Both are right: a par trade's protection
 value is pinned at s·A by the quotes, so raising R only moves the implied
 hazard; hold the hazard instead and the protection leg falls with
@@ -123,7 +124,7 @@ hazard; hold the hazard instead and the protection leg falls with
 the legend: the re-bootstrapped par-trade line is flat, and the
 re-bootstrapped off-market line's small positive slope is the coupon
 mismatch, not the recovery. Panel (a) shows the implied default probability
-rising with the assumed R: not a model-free number.
+rising with R: not a model-free number.
 
 <!-- table: table_3_risk_report -->
 
@@ -200,17 +201,16 @@ buyer over four times the calendar theta: the 5Y point rolls towards the
 lower 4Y spread. On `distressed_inverted` it is the other way round: the
 calendar theta is the larger by a factor of four, because the month that
 passes carried a 31.5% front-end hazard, and rolling onto the higher shorter
-spreads gives most of it back. The 1-month window holds the first coupon,
-which both thetas net out.
+spreads gives most of it back. The 1-month window holds the first coupon;
+both thetas net it out.
 
 **4. A P&L explain is only as good as its second-order terms.** Table 4
 explains the 5Y IG buy under six scenarios with the t₀ sensitivities:
 first order from the per-pillar CS01s, ½Γ Δs² with Γ read from the parallel
 and central CS01s, rec01 × ΔR, IR01 × Δr, the cross term, and a residual.
-Read `residual_pct_of_total`: under half a percent on every spread scenario,
-including ×3. Chart 3 sweeps the multiplier from 0.5 to 4: the full
+Read `residual_pct_of_total`: under half a percent on every spread scenario. Chart 3 sweeps the multiplier from 0.5 to 4: the full
 revaluation is concave (the buyer is short convexity), first order is the
-straight line, and the gamma line sits between them at every point. The bar
+straight line, and the gamma line sits between them throughout. The bar
 the suite asserts on the steep HY curve at ×3: first order alone leaves a
 residual over 5% of the P&L, and the gamma term removes at least half of it
 (26% to 3.2%; rows in
@@ -240,7 +240,7 @@ same risk-free curve, usually the Z-spread: basis = s_CDS − z. At zero the
 two markets price the same default risk the same way; a negative basis says
 protection is cheap relative to the bond (buy the bond, buy protection, earn
 the difference if the package can be funded to maturity), a positive one the
-reverse. Three things keep it from zero. Funding: the bond must be financed
+reverse. Three things keep it off zero. Funding: the bond must be financed
 and the CDS need not, so when balance-sheet costs rise the bond cheapens and
 the basis turns negative. The cheapest-to-deliver option: after a credit
 event the protection buyer may deliver any pari passu obligation, which is
@@ -250,10 +250,10 @@ so the quoted par spread is a conversion, not the running cost paid.
 
 Worked example. Table 1's `IG_flat` 5Y row gives a par spread of 90 bp.
 Take a 5Y bond of the same name at an assumed Z-spread of 110 bp over the
-same SOFR OIS curve. The basis is 90 − 110 = −20 bp: negative, of the size a
+same curve. The basis is 90 − 110 = −20 bp: negative, of the size a
 funding cost of a few tens of bp produces on its own, and the sign that
 lets bond-plus-protection earn 20 bp a year if funded at the curve to
-maturity. The bond spread is assumed; the CDS side is the library's.
+maturity. The bond spread is assumed; the CDS side is computed.
 
 <!-- table: table_1_hazard_curves -->
 
@@ -306,7 +306,7 @@ five-year cumulative default rate as 1.54%. The market-implied number is
 four and a half times the historical one. That gap is the risk-neutral
 against real-world point: a CDS spread pays for default risk and for bearing
 it, and nothing in this library separates the two. (Later editions were not
-retrievable when this was written; [docs/DATA_NOTE.md](docs/DATA_NOTE.md)
+retrievable at the time of writing; [docs/DATA_NOTE.md](docs/DATA_NOTE.md)
 links the copy read.)
 
 ![Chart 1](outputs/charts/chart_1_survival_hazard.png)
