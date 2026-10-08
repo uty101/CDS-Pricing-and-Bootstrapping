@@ -1,4 +1,4 @@
-# CLAUDE.md — CDS Pricing and Hazard Rate Bootstrapping
+# CLAUDE.md: CDS Pricing and Hazard Rate Bootstrapping
 
 Read this first, every session. Then read `BUILD_PLAN.md`, the previous
 section's review file under `review/`, and `docs/CONVENTIONS_RESOLVED.md`
@@ -75,7 +75,7 @@ section's issue comments before starting and commits the answers to
   Python 3.11 is pinned in `.python-version`.
 - Set `UV_LINK_MODE=copy` before `uv sync` on this machine; the uv cache and
   the repo are on different filesystems and hardlinking fails.
-- QuantLib 1.43 wheels install on Windows/Python 3.11 — confirmed in
+- QuantLib 1.43 wheels install on Windows/Python 3.11, confirmed in
   Section 0. `ql.IsdaCdsEngine` exposes `HalfDayBias`, `NoBias`, `Piecewise`,
   `Flat`, `Taylor`, `NoFix`.
 - Charts are written with matplotlib's `Agg` backend; nothing opens a window.
