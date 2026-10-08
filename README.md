@@ -5,14 +5,14 @@ structure of market quotes (par spreads, or upfronts at a fixed coupon) is
 bootstrapped into a piecewise-constant hazard rate curve on a SOFR OIS
 discount curve, and a CDS is priced from it with the IMM schedule, act/360
 accrual, accrual on default, T+3 cash settlement and the accrued rebate. On
-top sit a risk report (CS01 by pillar and parallel, rec01 two ways, IR01,
-jump-to-default, two thetas), a scenario grid and a P&L explain.
+top sit a risk report (CS01 by pillar and parallel, rec01 2 ways, IR01,
+jump-to-default, 2 thetas), a scenario grid and a P&L explain.
 **The curves are illustrative** ([docs/DATA_NOTE.md](docs/DATA_NOTE.md))
 **and the library is validated against QuantLib's `IsdaCdsEngine`**: Table 2
 holds every pricer number, the 5Y CS01 and every bootstrapped hazard against
-QuantLib, with the tolerance and the pass in the last two columns. Two rows
+QuantLib, with the tolerance and pass in the last 2 columns. 2 rows
 read `False`: the distressed curve's 1Y and 2Y hazards on our own pillar
-grid, whose nodes sit one to three days from QuantLib's, miss the 0.5 bp bar
+grid, whose nodes sit 1 to 3 days from QuantLib's, miss the 0.5 bp bar
 by 0.04 and 0.01 bp on a 25% and 18% hazard. The
 `bootstrap_quantlib_nodes` rows fit the same quotes on QuantLib's dates and
 agree on every pillar of every curve to under 1e-8 bp
@@ -111,7 +111,7 @@ Everything under [outputs/](outputs/) is committed and is what this page
 shows; [outputs/results.html](outputs/results.html) has the same on one
 page that opens offline.
 
-## Four findings
+## 4 findings
 
 **1. Recovery sensitivity depends on what is held fixed.** In Table 3 the row
 `rec01` (spreads held fixed, curve re-bootstrapped at R + 1 point) is tens of
@@ -120,7 +120,7 @@ which is at par, while `rec01_hazard_fixed` (hazards held fixed) is
 thousands with the opposite sign. Both are right: a par trade's protection
 value is pinned at s·A by the quotes, so raising R only moves the implied
 hazard; hold the hazard instead and the protection leg falls with
-(1 − R). Chart 2's panel (b) shows the four lines on IG with each slope in
+(1 − R). Chart 2's panel (b) shows the 4 lines on IG with each slope in
 the legend: the re-bootstrapped par-trade line is flat, and the
 re-bootstrapped off-market line's small positive slope is the coupon
 mismatch, not the recovery. Panel (a) shows the implied default probability
@@ -169,7 +169,7 @@ continuous-time formula s = λ(1 − R) at the flat hazard the same spread
 implies. Read `diff_par_bp` and `diff_bp`: the textbook overstates the par
 spread on every row and misprices the distressed 5Y and 10Y upfronts by over
 a point.
-Four conventions make the gap: act/360 accrual against continuous time (the
+4 conventions make the gap: act/360 accrual against continuous time (the
 365/360 alone is 1.4% of the spread); quarterly coupons with accrual on
 default against a continuous premium; the IMM schedule, whose first coupon is
 paid in full and rebated, against a contract accruing from today; and a term
@@ -192,20 +192,20 @@ rate, which is what fails on the inverted distressed curve.
 
 <!-- end table -->
 
-**3. Theta on a steep curve and on an inverted one.** Table 3's last four
-rows are the 1-day and 1-month thetas, each computed two ways: the calendar
+**3. Theta on a steep curve and on an inverted one.** Table 3's last 4
+rows are the 1-day and 1-month thetas, each computed 2 ways: the calendar
 moves and the curve stays on its dates (`theta_calendar`), or the curve rolls
 with the calendar so the contract prices off a shorter tenor
 (`theta_rolldown`). On `HY_steep` a month of rolldown costs the protection
-buyer over four times the calendar theta: the 5Y point rolls towards the
+buyer over 4 times the calendar theta: the 5Y point rolls towards the
 lower 4Y spread. On `distressed_inverted` it is the other way round: the
-calendar theta is the larger by a factor of four, because the month that
+calendar theta is the larger by a factor of 4, because the month that
 passes carried a 31.5% front-end hazard, and rolling onto the higher shorter
 spreads gives most of it back. The 1-month window holds the first coupon;
 both thetas net it out.
 
 **4. A P&L explain is only as good as its second-order terms.** Table 4
-explains the 5Y IG buy under six scenarios with the t₀ sensitivities:
+explains the 5Y IG buy under 6 scenarios with the t₀ sensitivities:
 first order from the per-pillar CS01s, ½Γ Δs² with Γ read from the parallel
 and central CS01s, rec01 × ΔR, IR01 × Δr, the cross term, and a residual.
 Read `residual_pct_of_total`: under half a percent on every spread scenario. Chart 3 sweeps the multiplier from 0.5 to 4: the full
@@ -233,14 +233,14 @@ convex in R and the explain has no second-order recovery term.
 
 ![Chart 3](outputs/charts/chart_3_pnl_vs_spread_shock.png)
 
-## The CDS–bond basis
+## The CDS basis against bonds
 
 The basis is the CDS par spread of a name less its bond's spread over the
 same risk-free curve, usually the Z-spread: basis = s_CDS − z. At zero the
 two markets price the same default risk the same way; a negative basis says
 protection is cheap relative to the bond (buy the bond, buy protection, earn
 the difference if the package can be funded to maturity), a positive one the
-reverse. Three things keep it off zero. Funding: the bond must be financed
+reverse. 3 things keep it off zero. Funding: the bond must be financed
 and the CDS need not, so when balance-sheet costs rise the bond cheapens and
 the basis turns negative. The cheapest-to-deliver option: after a credit
 event the protection buyer may deliver any pari passu obligation, which is
@@ -301,9 +301,9 @@ at the file's R = 0.40 (`implied_5y_default_prob` on the `recovery = 0.4`
 row; Table 1's IG 5Y `cum_default_prob` is the same number). S&P Global
 Ratings' *Default, Transition, and Recovery: 2020 Annual Global Corporate
 Default And Rating Transition Study* (7 April 2021), Table 24 "Global
-Corporate Average Cumulative Default Rates (1981–2020)", gives the BBB
-five-year cumulative default rate as 1.54%. The market-implied number is
-four and a half times the historical one. That gap is the risk-neutral
+Corporate Average Cumulative Default Rates (1981 to 2020)", gives the BBB
+5-year cumulative default rate as 1.54%. The market-implied number is
+4.6 times the historical one. That gap is the risk-neutral
 against real-world point: a CDS spread pays for default risk and for bearing
 it, and nothing in this library separates the two. (Later editions were not
 retrievable at the time of writing; [docs/DATA_NOTE.md](docs/DATA_NOTE.md)
@@ -341,7 +341,7 @@ of the numbers needs:
 - The `us_uk` holiday calendar is committed and tested on dates, but every
   number in outputs/ is on the weekend-only calendar; the `us_uk` path
   through the pricer, risk report and explain is untested.
-- The explain has no second-order recovery or rates–spread term; Table 4's
+- The explain has no second-order recovery or rates cross term; Table 4's
   recovery and combined rows show what that leaves.
 
 ## Section reviews
