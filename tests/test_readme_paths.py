@@ -50,8 +50,8 @@ def test_every_readme_path_exists() -> None:
     assert paths, "no relative links found"
     missing = [p for p in paths if not (ROOT / p).exists()]
     assert not missing, missing
-    # The three chart PNGs are embedded as images.
-    images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
+    # The three chart PNGs are embedded as images (the CI badge is an image too and is not a chart).
+    images = [p for p in re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text) if p.startswith("outputs/charts/")]
     assert sorted(Path(p).name for p in images) == sorted(p.name for p in CHARTS_DIR.glob("*.png"))
 
 
