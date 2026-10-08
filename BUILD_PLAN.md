@@ -1,4 +1,4 @@
-# BUILD_PLAN.md — CDS Pricing and Hazard Rate Bootstrapping
+# BUILD_PLAN.md: CDS Pricing and Hazard Rate Bootstrapping
 
 One section per session. A session executes exactly one numbered section,
 ends with `review/<NN>_<slug>.md`, all tests green, one commit
@@ -15,7 +15,7 @@ coupon c, recovery R, risky annuity A, PV_prem, PV_prot, par spread s_par.
 
 ---
 
-## Part A — Conventions locked
+## Part A: Conventions locked
 
 Each convention names its source. Where I am not certain the rule is stated
 correctly, it is repeated in Part B ("Conventions to confirm") rather than
@@ -88,7 +88,7 @@ Sources used throughout:
 
 ---
 
-## Part B — Conventions to confirm
+## Part B: Conventions to confirm
 
 These are the rules I could not pin down from the sources with certainty, or
 where the kickoff wording and the sources disagree. Each has a recommendation.
@@ -184,7 +184,7 @@ start of Section 1; Section 1 does not start without that file.
 
 ---
 
-## Part C — Corrections to the spec
+## Part C: Corrections to the spec
 
 The plan adopts these. Where a section's output follows the corrected form,
 the section says so.
@@ -242,7 +242,7 @@ the section says so.
 
 ---
 
-## Part D — Fixed definitions
+## Part D: Fixed definitions
 
 ### D.1 Public objects (`cds/types.py`, created in Section 1 with no logic)
 
@@ -389,9 +389,9 @@ file rather than restating it.
 
 ---
 
-## Part E — Sections
+## Part E: Sections
 
-### Section 0 — Repo skeleton (this session)
+### Section 0: Repo skeleton (this session)
 
 **Purpose.** Put the plan, the rules, the spec and the empty structure in
 place so every later session has the same starting point. No pricing code.
@@ -412,7 +412,7 @@ the user stands in for it.
 
 ---
 
-### Section 1 — `conventions.py` and `schedule.py`
+### Section 1: `conventions.py` and `schedule.py`
 
 **Purpose.** The IMM date generator, both roll rules, accrual fractions and
 payment adjustment, tested against QuantLib as an independent oracle. Most
@@ -486,7 +486,7 @@ maturity from both rules and the oracle, as its rows.
 
 ---
 
-### Section 2 — `curves.py` part 1: the discount curve
+### Section 2: `curves.py` part 1: the discount curve
 
 **Purpose.** Bootstrap the SOFR OIS snapshot into a log-linear discount
 curve with `df(t)` and `forward(t1, t2)`, matching the ISDA model's
@@ -526,7 +526,7 @@ zero rate act/365F, forward) as its rows.
 
 ---
 
-### Section 3 — `curves.py` part 2: the survival and recovery curves
+### Section 3: `curves.py` part 2: the survival and recovery curves
 
 **Purpose.** `SurvivalCurve` with hazard pillars, `Q(t)`, `hazard(t)`,
 default density, and `RecoveryCurve`; the `with_as_of` shifts Section 8
@@ -565,7 +565,7 @@ times (nodes fixed in date); `mode="tenor"` shifts every pillar date by
 
 ---
 
-### Section 4 — `legs.py`: premium and protection legs, both engines
+### Section 4: `legs.py`: premium and protection legs, both engines
 
 **Purpose.** The premium leg (risky annuity with accrual on default) and the
 protection leg, in the ISDA closed form per interval and on a brute-force
@@ -633,7 +633,7 @@ engine.
 
 ---
 
-### Section 5 — `pricer.py`: `price`, par spread, upfront, conversions
+### Section 5: `pricer.py`: `price`, par spread, upfront, conversions
 
 **Purpose.** `price(state, trade)`, the ISDA flat-hazard conversion between
 quoted spread and upfront, clean versus dirty, accrued, cash settle
@@ -703,7 +703,7 @@ upfront, recovered spread).
 
 ---
 
-### Section 6 — `bootstrap.py`, the three illustrative curves, Table 1, Chart 1
+### Section 6: `bootstrap.py`, the three illustrative curves, Table 1, Chart 1
 
 **Purpose.** Sequential Brent per pillar with arbitrage detection and the
 two fallbacks; the three committed curves; the first outputs.
@@ -778,7 +778,7 @@ were derived that way in this section so Table 1 can show both.
 
 ---
 
-### Section 7 — `validation/quantlib_check.py` and Table 2 (plus Table 5)
+### Section 7: `validation/quantlib_check.py` and Table 2 (plus Table 5)
 
 **Purpose.** The same trades and curves through `ql.IsdaCdsEngine` with the
 matching flags. Done only when all three curves are within tolerance or the
@@ -847,7 +847,7 @@ Table 2 is written from the same rows).
 
 ---
 
-### Section 8 — `risk.py`, Table 3, Chart 2
+### Section 8: `risk.py`, Table 3, Chart 2
 
 **Purpose.** CS01 by pillar and parallel, rec01 (both), IR01, JTD, both
 thetas, exactly as Part D.2; the risk report and the corrected Chart 2.
@@ -914,7 +914,7 @@ trade; the coupon paid in the window, if any, is added with the side's sign.
 
 ---
 
-### Section 9 — `scenarios.py`, `explain.py`, Chart 3, Table 4
+### Section 9: `scenarios.py`, `explain.py`, Chart 3, Table 4
 
 **Purpose.** The scenario grid vectorised with numpy, full revaluation
 against first-order and first-plus-gamma, and the P&L explain with its
@@ -993,7 +993,7 @@ pnl_rates, pnl_theta, pnl_cross, residual, residual_pct_of_total`:
 
 ---
 
-### Section 10 — README and results page
+### Section 10: README and results page
 
 **Purpose.** The README with Table 2 above the fold, the rec01 explanation,
 the ISDA-versus-textbook comparison, a CDS-bond basis note with one worked
