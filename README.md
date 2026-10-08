@@ -239,7 +239,7 @@ convex in R and the explain has no second-order recovery term.
 
 The basis is the CDS par spread of a name less its bond's spread over the
 same risk-free curve, usually the Z-spread: basis = s_CDS − z. At zero the
-two markets price the same default risk the same way; a negative basis says
+two markets price default risk alike; a negative basis says
 protection is cheap relative to the bond (buy the bond, buy protection, earn
 the difference if the package can be funded to maturity), a positive one the
 reverse. 3 things keep it off zero. Funding: the bond must be financed
