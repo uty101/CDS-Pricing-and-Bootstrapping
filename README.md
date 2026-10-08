@@ -1,5 +1,7 @@
 # CDS Pricing and Hazard Rate Bootstrapping
 
+[![tests](https://github.com/uty101/CDS-Pricing-and-Bootstrapping/actions/workflows/tests.yml/badge.svg)](https://github.com/uty101/CDS-Pricing-and-Bootstrapping/actions/workflows/tests.yml)
+
 A single-name CDS library on the ISDA Standard Model conventions: a term
 structure of market quotes (par spreads, or upfronts at a fixed coupon) is
 bootstrapped into a piecewise-constant hazard rate curve on a SOFR OIS
